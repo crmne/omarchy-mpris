@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "id": "crmne.mpris",
+  "name": "MPRIS + Album Art",
+  "version": "1.0.0",
+  "author": "Carmine Paolino",
+  "license": "MIT",
+  "description": "Compact MPRIS controls with album art and now-playing text for the Omarchy bar.",
+  "kinds": [
+    "service",
+    "bar-widget"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Service.qml",
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "MPRIS + album art",
+    "description": "Previous, play/pause, next, album art, and artist/title.",
+    "category": "Media",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "albumArtSize": 18,
+      "maxLabelWidth": 300,
+      "showArtist": true
+    },
+    "schema": [
+      {
+        "key": "albumArtSize",
+        "type": "integer",
+        "label": "Album art size",
+        "description": "Album-art size in logical pixels.",
+        "min": 12,
+        "max": 22,
+        "step": 1,
+        "defaultValue": 18
+      },
+      {
+        "key": "maxLabelWidth",
+        "type": "integer",
+        "label": "Maximum label width",
+        "description": "Maximum width of artist/title text in logical pixels.",
+        "min": 80,
+        "max": 600,
+        "step": 10,
+        "defaultValue": 300
+      },
+      {
+        "key": "showArtist",
+        "type": "boolean",
+        "label": "Show artist",
+        "description": "Show artist before the track title when metadata provides it.",
+        "defaultValue": true
+      }
+    ]
+  }
+}
