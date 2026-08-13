@@ -3,6 +3,8 @@
 A native Quattro/Quickshell bar plugin that restores the media cluster from the
 old Waybar setup:
 
+![MPRIS + Album Art in the Omarchy bar](preview.png)
+
 `previous` · `play/pause` · `next` · `album art` · `artist — title`
 
 The widget uses Quickshell's MPRIS service directly. It does not poll
