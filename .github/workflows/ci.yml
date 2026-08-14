@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  unit:
+    name: Latch unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # MediaLatch.js is loaded by QML and required by node, so it has to parse
+      # as plain JavaScript with no build step.
+      - name: Syntax
+        run: node --check MediaLatch.js
+
+      - name: Tests
+        run: node --test tests/latch.test.js
+
+  manifest:
+    name: Manifest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate
+        run: ./tests/validate-manifest.sh
+
+  shell:
+    name: Shell scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Lint
+        run: shellcheck tests/*.sh
+
+  python:
+    name: Fake player
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile
+        run: python3 -m py_compile tests/fake_chromium.py
+
+  qml:
+    name: QML lint
+    runs-on: ubuntu-latest
+    # Informational only: qmllint cannot resolve the Quickshell and qs.* imports
+    # without an Omarchy install, so unresolved-import warnings are expected and
+    # must not gate a merge. Syntax errors still show up in the log.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Qt tools
+        run: sudo apt-get update && sudo apt-get install -y qt6-declarative-dev-tools
+      - name: Lint
+        run: |
+          for f in *.qml; do
+            echo "── $f"
+            qmllint "$f" || true
+          done
