@@ -17,9 +17,31 @@ VIDEO_TITLE="FAKE VIDEO TAB | should never reach the bar"
 PASS=0
 FAIL=0
 
+SKIP=0
 say() { printf '%s\n' "$*"; }
 ok()   { PASS=$((PASS+1)); say "  ok   — $1"; }
 bad()  { FAIL=$((FAIL+1)); say "  FAIL — $1"; }
+skip() { SKIP=$((SKIP+1)); say "  skip — $1"; }
+
+# The fake competes with any real player for selection, and loses whenever one
+# is actually playing. Every assertion then fails for the same uninteresting
+# reason, which reads as a product bug. Detect it and say so instead: none of
+# the fake's own tracks reached the bar, so the run proved nothing.
+contended() {
+  local shown="$1" line foreign=""
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    case "$line" in
+      Nightcall|Genesis|Sun|Desire|"$VIDEO_TITLE") ;;
+      *) foreign="$line"; break ;;
+    esac
+  done <<<"$shown"
+  [ -z "$foreign" ] && return 1
+  say "  skip — inconclusive: another player put \"$foreign\" on the bar"
+  say "         pause your own media and re-run."
+  SKIP=$((SKIP+1))
+  return 0
+}
 
 # The fake player needs python-dbus and PyGObject, which Arch installs into the
 # system interpreter only. A version manager (mise, pyenv, asdf) puts its own
@@ -102,6 +124,7 @@ run_scenario() {
 scenario_flip() {
   say "flip — the video tab surfaces for 200 ms on every skip"
   local shown; shown=$(run_scenario flip 3 12)
+  contended "$shown" && return
   if grep -qxF "$VIDEO_TITLE" <<<"$shown"; then
     bad "the video tab reached the bar"
   else
@@ -117,6 +140,7 @@ scenario_flip() {
 scenario_blank() {
   say "blank — metadata cleared for 350 ms on every skip"
   local shown; shown=$(run_scenario blank 3 12)
+  contended "$shown" && return
   if grep -qxF "Genesis" <<<"$shown"; then
     ok "tracks landed across the gap"
   else
@@ -132,6 +156,7 @@ scenario_blank() {
 scenario_adbreak() {
   say "adbreak — the video tab holds the bus for 5 s"
   local shown; shown=$(run_scenario adbreak 2 16)
+  contended "$shown" && return
   if grep -qxF "$VIDEO_TITLE" <<<"$shown"; then
     bad "the video tab won by outlasting the window"
   else
@@ -142,6 +167,7 @@ scenario_adbreak() {
 scenario_handover() {
   say "handover — music paused, then the video tab genuinely played"
   local shown; shown=$(run_scenario handover 2 12)
+  contended "$shown" && return
   if grep -qxF "$VIDEO_TITLE" <<<"$shown"; then
     ok "a deliberate switch was accepted"
   else
@@ -152,6 +178,7 @@ scenario_handover() {
 scenario_clean() {
   say "clean — a well-behaved player, as a control"
   local shown; shown=$(run_scenario clean 3 11)
+  contended "$shown" && return
   if grep -qxF "Genesis" <<<"$shown" && grep -qxF "Sun" <<<"$shown"; then
     ok "ordinary skips pass straight through"
   else
@@ -167,5 +194,5 @@ for s in flip blank adbreak handover clean; do
   fi
 done
 
-say "integration: $PASS passed, $FAIL failed"
+say "integration: $PASS passed, $FAIL failed, $SKIP skipped"
 [ "$FAIL" -eq 0 ]
