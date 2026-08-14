@@ -15,7 +15,7 @@ Item {
 
   // Keep serving the current track this long after a player drops its
   // metadata entirely. 0 disables it.
-  property int graceMs: 1500
+  property int graceMs: 5000
 
   // How long a *suspicious* track must hold still before it reaches the bar.
   // Tracks that look genuine never wait, so this is not a latency the bar pays
@@ -312,6 +312,8 @@ Item {
       holding: holding,
       liveTitle: liveTitle,
       suspects: comSuspects,
+      dbg: latch ? latch.debug() : null,
+      liveHasMedia: liveHasMedia,
       player: player ? String(player.identity || player.desktopEntry || player.dbusName || "") : "",
       artist: artist,
       title: title,

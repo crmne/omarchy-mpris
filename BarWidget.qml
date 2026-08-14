@@ -28,7 +28,7 @@ BarWidget {
 
   // Clamps mirror the min/max each setting declares in manifest.json.
   readonly property int transitionMs: Math.max(0, Math.min(800, Number(setting("transitionMs", 260))))
-  readonly property int graceMs: Math.max(0, Math.min(5000, Number(setting("trackChangeGrace", 1500))))
+  readonly property int graceMs: Math.max(0, Math.min(10000, Number(setting("trackChangeGrace", 5000))))
   readonly property int settleMs: Math.max(0, Math.min(2000, Number(setting("trackSettle", 350))))
   readonly property string labelWidthMode: {
     var mode = String(setting("labelWidth", "smooth"))
@@ -366,8 +366,12 @@ BarWidget {
       if (String(front.source) === source) return
       back.source = source
       // An already-cached cover reports no status change, so poke the swap
-      // once the assignment has settled.
-      Qt.callLater(function() { art.reveal(art.back) })
+      // once the assignment has settled. Guarded because the deferred call can
+      // outlive the component: saving a plugin file tears the widget down, and
+      // an unguarded call then throws on every reload.
+      Qt.callLater(function() {
+        if (art && typeof art.reveal === "function") art.reveal(art.back)
+      })
     }
 
     Image {

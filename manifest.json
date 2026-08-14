@@ -26,7 +26,7 @@
       "maxLabelWidth": 300,
       "showArtist": true,
       "transitionMs": 260,
-      "trackChangeGrace": 1500,
+      "trackChangeGrace": 5000,
       "trackSettle": 350,
       "labelWidth": "smooth"
     },
@@ -72,11 +72,11 @@
         "key": "trackChangeGrace",
         "type": "integer",
         "label": "Track change grace",
-        "description": "How long to keep showing the current track while a player blanks its metadata between songs, in milliseconds. Spotify Web and other browser players need this or the widget vanishes on every skip. 0 disables it.",
+        "description": "How long to keep showing the current track while a player blanks its metadata between songs, in milliseconds. Measured against Spotify Web: ordinary skips leave the bus empty for under 200ms, but an ad boundary can run to nearly 3 seconds. 0 disables it.",
         "min": 0,
-        "max": 5000,
+        "max": 10000,
         "step": 100,
-        "defaultValue": 1500
+        "defaultValue": 5000
       },
       {
         "key": "trackSettle",

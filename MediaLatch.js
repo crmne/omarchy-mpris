@@ -18,9 +18,14 @@
 // nextDeadline() comes due, and render committed().
 
 var DEFAULTS = {
-  graceMs: 1500,          // keep the current track this long after media vanishes
+  // Keep the current track this long after media vanishes. Measured against
+  // Spotify Web: ordinary skips leave the bus empty for 86-177ms, some
+  // transitions for 417-531ms, and an ad boundary for 2683-2895ms. 1500ms
+  // looked generous and blanked the bar on roughly a third of transitions.
+  graceMs: 5000,
   settleMs: 350,          // how long a *suspicious* track must hold still
   lostPlayerGraceMs: 400, // shorter wait once the player has left the bus
+  interloperWaitMs: 1500, // how long a suspicious track is made to prove itself
   bounceMs: 1500,         // window in which a revert marks the interruption
   maxSuspects: 8,
   suspectTtlMs: 300000,   // how long a learned suspicion stays relevant
@@ -111,8 +116,12 @@ function createLatch(options) {
     return !!com.playerKey && aliveKeys.indexOf(com.playerKey) !== -1
   }
 
+  // Deliberately independent of graceMs. They answer different questions —
+  // "how long might media be absent" versus "how long must an impostor prove
+  // itself" — and tying them together meant raising one silently multiplied
+  // the other by the suppression round count.
   function suspiciousWait() {
-    return Math.max(1, Math.max(cfg.settleMs, cfg.graceMs))
+    return Math.max(1, Math.max(cfg.settleMs, cfg.interloperWaitMs))
   }
 
   // How much reason there is to doubt an incoming track.
@@ -222,7 +231,14 @@ function createLatch(options) {
   }
 
   function evaluate(now) {
-    if (!live.hasMedia) {
+    // Losing the title while the bar is showing one is a teardown in progress,
+    // not a new track. Players empty the fields one message at a time, and the
+    // artist often outlives the title by a few hundred ms — long enough that
+    // treating it as a track change commits a titleless entry and animates
+    // twice for a song that never changed.
+    var partial = live.hasMedia && !live.title && com.hasMedia && !!com.title
+
+    if (!live.hasMedia || partial) {
       settleDueAt = -1
       if (!com.hasMedia) return
       if (cfg.graceMs <= 0) { commitEmpty(); return }
@@ -341,7 +357,9 @@ function createLatch(options) {
         suppressRounds: suppressRounds,
         graceDueAt: graceDueAt,
         settleDueAt: settleDueAt,
-        holding: com.hasMedia && (!live.hasMedia || live.key !== com.key)
+        holding: com.hasMedia && (!live.hasMedia || live.key !== com.key),
+        committedAlive: committedPlayerAlive(),
+        graceMs: cfg.graceMs
       }
     }
   }

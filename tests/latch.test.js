@@ -138,9 +138,9 @@ test('media that never comes back clears the bar after the grace window', () => 
   const d = new Driver()
   d.set(spotify('LEVELS'))
   d.set(blank())
-  d.advance(1400)
+  d.advance(4900)
   assert.strictEqual(d.title(), 'LEVELS', 'still inside the window')
-  d.advance(200)
+  d.advance(300)
   assert.strictEqual(d.bar().hasMedia, false, 'past the window the bar clears')
 })
 
@@ -229,7 +229,7 @@ test('clearing the bar forgets pending bounce bookkeeping', () => {
   d.set(spotify('A'))
   d.set(spotify('B'))             // arms the bounce detector
   d.set(blank())
-  d.advance(2000)                 // grace expires, bar clears
+  d.advance(5300)                 // grace expires, bar clears
   assert.strictEqual(d.bar().hasMedia, false)
   d.set(spotify('A'))
   assert.deepStrictEqual(d.debug().suspects, [], 'a stale bounce must not teach it anything')
@@ -489,7 +489,7 @@ test('stopping and starting again re-commits', () => {
   const d = new Driver()
   d.set(spotify('Song'))
   d.set(blank())
-  d.advance(2000)
+  d.advance(5300)
   assert.strictEqual(d.bar().hasMedia, false)
   d.set(spotify('Song'))
   assert.strictEqual(d.title(), 'Song', 'nothing on the bar, so no reason to wait')
@@ -588,4 +588,52 @@ test('every real track in the recording is still reached', () => {
     d.set(spotify(t))         // the real track
     assert.strictEqual(d.title(), t, `${t} should be on the bar with no delay`)
   }
+})
+
+// ── Metadata emptying in stages ───────────────────────────────────────────
+
+test('losing the title while the artist remains is not a track change', () => {
+  // Observed on Spotify Web: the title emptied for 558ms while the artist
+  // stayed populated, so the latch saw a new key rather than a gap and
+  // committed a titleless entry — the label lost its title mid-song and
+  // animated twice for a track that never changed.
+  const d = new Driver()
+  d.set(spotify('Real Title', { artist: 'Real Artist' }))
+  d.set(spotify('', { artist: 'Real Artist' }))
+  d.advance(600)
+  assert.strictEqual(d.title(), 'Real Title', 'the bar keeps the title it had')
+  d.set(spotify('Real Title', { artist: 'Real Artist' }))
+  assert.strictEqual(d.title(), 'Real Title')
+})
+
+test('a titleless track still shows when there was nothing before it', () => {
+  // The guard is about not tearing down something good, so with an empty bar
+  // a title-free player is better than nothing.
+  const d = new Driver()
+  d.set(spotify('', { artist: 'Radio Stream' }))
+  assert.strictEqual(d.bar().artist, 'Radio Stream')
+  assert.strictEqual(d.bar().hasMedia, true)
+})
+
+test('an ad-break length gap is bridged', () => {
+  // Measured at 2683ms and 2895ms on a real ad boundary; the old 1500ms
+  // window blanked the bar for both.
+  const d = new Driver()
+  d.set(spotify('Before The Ad'))
+  d.set(blank())
+  d.advance(2900)
+  assert.strictEqual(d.title(), 'Before The Ad', 'still held across the ad boundary')
+  d.set(spotify('Advertisement'))
+  assert.strictEqual(d.title(), 'Advertisement')
+})
+
+test('raising grace does not multiply how long an impostor is suppressed', () => {
+  // grace and interloper suppression used to share one number, so a longer
+  // grace silently multiplied the suppression ceiling by the round count.
+  const d = new Driver()
+  d.set(spotify('Song'))
+  d.set(youtube())
+  d.advance(40 * 1000)
+  assert.strictEqual(d.bar().title, YT_TITLE,
+    'the ceiling stays tied to the interloper wait, not to grace')
 })
