@@ -1,0 +1,13 @@
+{
+  "name": "omarchy-mpris",
+  "version": "1.1.0",
+  "private": true,
+  "description": "Tests for the media-latch decision machine used by the Omarchy bar widget",
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test tests/latch.test.js",
+    "check": "node --check MediaLatch.js && ./tests/validate-manifest.sh",
+    "verify": "npm run check && npm test",
+    "integration": "./tests/integration.sh"
+  }
+}
