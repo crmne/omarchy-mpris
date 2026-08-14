@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "crmne.mpris",
   "name": "Media Controls + Album Art",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "author": "Carmine Paolino",
   "license": "MIT",
   "description": "Media controls for the Omarchy bar with live album art, now-playing details, and previous/play-pause/next buttons for Spotify and other players.",
@@ -24,7 +24,11 @@
     "defaults": {
       "albumArtSize": 18,
       "maxLabelWidth": 300,
-      "showArtist": true
+      "showArtist": true,
+      "transitionMs": 260,
+      "trackChangeGrace": 1500,
+      "trackSettle": 350,
+      "labelWidth": "smooth"
     },
     "schema": [
       {
@@ -53,6 +57,48 @@
         "label": "Show artist",
         "description": "Show artist before the track title when metadata provides it.",
         "defaultValue": true
+      },
+      {
+        "key": "transitionMs",
+        "type": "integer",
+        "label": "Transition duration",
+        "description": "Length of the track-change crossfade and the appear/disappear animation, in milliseconds. 0 turns all animation off.",
+        "min": 0,
+        "max": 800,
+        "step": 20,
+        "defaultValue": 260
+      },
+      {
+        "key": "trackChangeGrace",
+        "type": "integer",
+        "label": "Track change grace",
+        "description": "How long to keep showing the current track while a player blanks its metadata between songs, in milliseconds. Spotify Web and other browser players need this or the widget vanishes on every skip. 0 disables it.",
+        "min": 0,
+        "max": 5000,
+        "step": 100,
+        "defaultValue": 1500
+      },
+      {
+        "key": "trackSettle",
+        "type": "integer",
+        "label": "Track settle window",
+        "description": "How long a suspicious track must hold still before it reaches the bar, in milliseconds. Only applies to changes that look like another tab's media surfacing mid-skip: one that lost its next/previous controls, fell silent, or has been caught flashing past before. An ordinary track change is shown immediately and never waits. 0 disables the check.",
+        "min": 0,
+        "max": 2000,
+        "step": 50,
+        "defaultValue": 350
+      },
+      {
+        "key": "labelWidth",
+        "type": "string",
+        "label": "Label width behaviour",
+        "description": "smooth: the label resizes with each title. stable: it grows at once but only shrinks after the title settles, so skipping tracks stops shoving the rest of the bar. fixed: always reserve the maximum width and never reflow.",
+        "options": [
+          "smooth",
+          "stable",
+          "fixed"
+        ],
+        "defaultValue": "smooth"
       }
     ]
   }
