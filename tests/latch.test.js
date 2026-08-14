@@ -383,6 +383,134 @@ test('the suspect list is bounded', () => {
   assert.ok(d.debug().suspects.length <= 8, 'must not grow without bound')
 })
 
+// ── A suspicion is a guess, and is treated like one ───────────────────────
+
+test('a learned suspect costs one window, not an ad break', () => {
+  // Regression, caught by the integration suite's `clean` control: a track
+  // learned as a suspect used to be a strong tell, so playing it deliberately
+  // later held the bar on the previous title for tens of seconds.
+  const d = new Driver()
+  const flash = 'Genesis'
+  d.set(spotify('Nightcall'))
+  d.set(spotify(flash))                 // slips through looking normal
+  d.set(spotify('Nightcall'))           // bounces back, so it is learned
+  assert.ok(d.debug().suspects.length > 0, 'precondition: it was learned')
+
+  d.set(spotify(flash))                 // now played for real
+  d.advance(400)
+  assert.strictEqual(d.title(), flash, 'one settle window, then believed')
+})
+
+test('suspicions expire', () => {
+  const d = new Driver()
+  d.set(spotify('Nightcall'))
+  d.set(spotify('Genesis'))
+  d.set(spotify('Nightcall'))
+  assert.ok(d.debug().suspects.length > 0)
+  d.advance(6 * 60 * 1000)              // past the five minute TTL
+
+  // Asserted through behaviour rather than the list: committing with no delay
+  // at all is what "no longer a suspect" means. A live suspicion would still
+  // cost one settle window.
+  d.set(spotify('Genesis'))
+  assert.strictEqual(d.title(), 'Genesis',
+    'a flash from ten minutes ago says nothing about now')
+  assert.deepStrictEqual(d.debug().suspects, [], 'and the entry is gone')
+})
+
+test('a suspect still absorbs the flash it was learned for', () => {
+  const d = new Driver()
+  d.set(spotify('Nightcall'))
+  d.set(spotify('Genesis'))
+  d.set(spotify('Nightcall'))
+  d.set(spotify('Genesis'))             // flashes again
+  d.advance(100)                        // inside the window
+  assert.strictEqual(d.title(), 'Nightcall', 'absorbed, which is the point')
+})
+
+// ── Shapes I could not rule out by reading ────────────────────────────────
+
+test('an interloper that DOES have transport controls gets one window', () => {
+  // A second music session — YouTube Music, a podcast app — defeats the
+  // capability tell, since it has next/previous like the real one. Only the
+  // circumstantial "went quiet" tell is left, so a brief flash is absorbed
+  // and anything persistent is accepted. Documented rather than claimed.
+  const d = new Driver()
+  d.set(spotify('Real Track'))
+  d.set(spotify('Podcast Episode', { playing: false, artist: 'Some Show' }))
+  d.advance(100)
+  assert.strictEqual(d.title(), 'Real Track', 'a brief flash is still absorbed')
+  d.advance(500)
+  assert.strictEqual(d.title(), 'Podcast Episode', 'but it is believed if it persists')
+})
+
+test('metadata arriving in pieces settles on the finished track', () => {
+  // Players fill the title in before the artist. Each partial state is a
+  // different key, so this must not commit twice or strand a half-track.
+  const d = new Driver()
+  d.set(spotify('Old Song'))
+  d.set(spotify('New Song', { artist: '' }))
+  d.set(spotify('New Song', { artist: 'Real Artist' }))
+  d.advance(600)
+  assert.strictEqual(d.title(), 'New Song')
+  assert.strictEqual(d.bar().artist, 'Real Artist')
+})
+
+test('a gap that ends on a different track commits the new one', () => {
+  const d = new Driver()
+  d.set(spotify('Before'))
+  d.set(blank())
+  d.advance(200)
+  assert.strictEqual(d.title(), 'Before', 'bridged')
+  d.set(spotify('After'))
+  assert.strictEqual(d.title(), 'After', 'and the new track lands at once')
+})
+
+test('holding down next does not strand the bar on an early track', () => {
+  const d = new Driver()
+  d.set(spotify('Start'))
+  for (let i = 0; i < 12; i++) {
+    d.set(spotify('Rapid ' + i))
+    d.advance(60)
+  }
+  d.advance(1000)
+  assert.strictEqual(d.title(), 'Rapid 11', 'ends on whatever was last')
+})
+
+test('a paused player with metadata is still shown', () => {
+  // Paused is not absent. The widget dims the label rather than hiding it.
+  const d = new Driver()
+  d.set(spotify('Paused Song', { playing: false }))
+  assert.strictEqual(d.title(), 'Paused Song')
+  assert.strictEqual(d.bar().playing, false)
+})
+
+test('stopping and starting again re-commits', () => {
+  const d = new Driver()
+  d.set(spotify('Song'))
+  d.set(blank())
+  d.advance(2000)
+  assert.strictEqual(d.bar().hasMedia, false)
+  d.set(spotify('Song'))
+  assert.strictEqual(d.title(), 'Song', 'nothing on the bar, so no reason to wait')
+})
+
+test('track keys cannot alias across the title and artist boundary', () => {
+  // The key is a join, so a title containing the separator must not collide
+  // with a different title/artist split.
+  assert.notStrictEqual(trackKey('A␟B', '', ''), trackKey('A', 'B', ''))
+  assert.notStrictEqual(trackKey('Song', 'Artist', ''), trackKey('Song', '', 'Artist'))
+})
+
+test('changing the grace setting at runtime takes effect', () => {
+  const d = new Driver()
+  d.set(spotify('Song'))
+  d.latch.config.graceMs = 100
+  d.set(blank())
+  d.advance(300)
+  assert.strictEqual(d.bar().hasMedia, false, 'the shorter window applies')
+})
+
 // ── Configuration ─────────────────────────────────────────────────────────
 
 test('settleMs of 0 disables absorption entirely', () => {

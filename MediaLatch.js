@@ -23,6 +23,7 @@ var DEFAULTS = {
   lostPlayerGraceMs: 400, // shorter wait once the player has left the bus
   bounceMs: 1500,         // window in which a revert marks the interruption
   maxSuspects: 8,
+  suspectTtlMs: 300000,   // how long a learned suspicion stays relevant
   maxSuppressRounds: 20   // ceiling so a real handover is never locked out
 }
 
@@ -67,19 +68,43 @@ function createLatch(options) {
   var graceDueAt = -1
   var settleDueAt = -1
 
-  function isSuspect(key) {
-    return !!key && suspects.indexOf(key) !== -1
+  // Suspicions go stale. A track that flashed past once an hour ago says
+  // nothing about the track you are deliberately playing now, and letting the
+  // list accumulate forever means the widget slowly learns to distrust your
+  // own library.
+  function pruneSuspects(now) {
+    for (var i = suspects.length - 1; i >= 0; i--) {
+      if (suspects[i].until <= now) suspects.splice(i, 1)
+    }
   }
 
-  function markSuspect(key) {
-    if (!key || isSuspect(key)) return
-    suspects.push(key)
+  function suspectIndex(key) {
+    for (var i = 0; i < suspects.length; i++) {
+      if (suspects[i].key === key) return i
+    }
+    return -1
+  }
+
+  function isSuspect(key, now) {
+    if (!key) return false
+    pruneSuspects(now)
+    return suspectIndex(key) !== -1
+  }
+
+  function markSuspect(key, now) {
+    if (!key) return
+    var at = suspectIndex(key)
+    if (at !== -1) {
+      suspects[at].until = now + cfg.suspectTtlMs
+      return
+    }
+    suspects.push({ key: key, until: now + cfg.suspectTtlMs })
     while (suspects.length > cfg.maxSuspects) suspects.shift()
   }
 
   function clearSuspect(key) {
-    var index = suspects.indexOf(key)
-    if (index !== -1) suspects.splice(index, 1)
+    var at = suspectIndex(key)
+    if (at !== -1) suspects.splice(at, 1)
   }
 
   function committedPlayerAlive() {
@@ -101,7 +126,7 @@ function createLatch(options) {
   // "It went quiet" is only a hint, and it is also what a video you just
   // opened paused looks like — holding that for the full ad-break budget
   // leaves the bar on the previous title for half a minute.
-  function interloperStrength() {
+  function interloperStrength(now) {
     if (!com.hasMedia) return "none"
 
     // Someone pressed play on something else. A session that is playing while
@@ -111,8 +136,12 @@ function createLatch(options) {
     // other tell at once and would otherwise stay stuck behind them.
     if (live.playing && !com.playing) return "none"
 
-    // Seen this exact track flash past before.
-    if (isSuspect(live.key)) return "strong"
+    // Seen this exact track flash past before. Only weak: the evidence is a
+    // guess about the future from one past event, and a flash is over in a few
+    // hundred ms anyway, so one window absorbs it. Treating it as strong let a
+    // track that once flashed be held back for half a minute the next time it
+    // was genuinely played.
+    if (isSuspect(live.key, now)) return "weak"
 
     // A session you cannot skip through is not the session you are skipping
     // through. This is what a background video tab looks like beside Spotify.
@@ -226,7 +255,7 @@ function createLatch(options) {
     // The bus has come back to what we just displaced, so what we committed in
     // between never really happened. Learn it, and restore at once.
     if (bounceUntil >= 0 && now < bounceUntil && live.key === displacedKey) {
-      markSuspect(lastCommittedKey)
+      markSuspect(lastCommittedKey, now)
       bounceUntil = -1
       displacedKey = ""
       lastCommittedKey = ""
@@ -234,7 +263,7 @@ function createLatch(options) {
       return
     }
 
-    var strength = interloperStrength()
+    var strength = interloperStrength(now)
 
     // Nothing suspicious about it: straight to the bar, no delay.
     if (strength === "none") { commitAll(now); return }
@@ -258,7 +287,7 @@ function createLatch(options) {
       fired = true
       if (!live.hasMedia) {
         evaluate(now)
-      } else if (interloperStrength() === "strong" && suppressRounds < cfg.maxSuppressRounds) {
+      } else if (interloperStrength(now) === "strong" && suppressRounds < cfg.maxSuppressRounds) {
         // Still looks wrong, so keep refusing it. One window is not enough: a
         // Spotify ad break parks the real session for far longer than any
         // fixed wait, and the background tab would win by outlasting it.
@@ -277,6 +306,9 @@ function createLatch(options) {
   function update(nextLive, alivePlayerKeys, now) {
     live = nextLive
     aliveKeys = alivePlayerKeys || []
+    // Prune here as well as on lookup, so what the status IPC reports is what
+    // is actually still being held against a track.
+    pruneSuspects(now)
     evaluate(now)
 
     // The player went away mid-grace: nothing is coming back, so cut the wait
@@ -305,7 +337,7 @@ function createLatch(options) {
     // Introspection for the status IPC and for tests.
     debug: function () {
       return {
-        suspects: suspects.slice(),
+        suspects: suspects.map(function (s) { return s.key }),
         suppressRounds: suppressRounds,
         graceDueAt: graceDueAt,
         settleDueAt: settleDueAt,
