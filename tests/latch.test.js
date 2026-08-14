@@ -266,6 +266,61 @@ test('a genuine switch to another real player is accepted', () => {
   assert.strictEqual(d.title(), 'Some Film')
 })
 
+// ── When the video tab is the main event, not the interruption ────────────
+
+// A second video session: like `youtube()`, no transport controls either.
+function video (title, opts = {}) {
+  return {
+    hasMedia: true,
+    key: trackKey(title, 'Channel', ''),
+    title, artist: 'Channel', album: '',
+    artUrl: 'file:///v.png',
+    playing: opts.playing ?? true,
+    canGoPrevious: false,
+    canGoNext: false,
+    canPlayPause: true,
+    playerKey: 'chromium'
+  }
+}
+
+test('moving between two video tabs is never delayed', () => {
+  // Neither has transport controls, so the capability tell must not arm —
+  // it is only meaningful when the track being replaced had controls itself.
+  const d = new Driver()
+  d.set(video('Video A'))
+  d.set(video('Video B'))
+  assert.strictEqual(d.title(), 'Video B')
+})
+
+test('a video that opens paused is shown promptly, not held for an ad break', () => {
+  // Regression: "fell silent as it changed" is circumstantial, but it used to
+  // buy the full multi-round budget, so opening a video that did not autoplay
+  // left the previous title on the bar for over thirty seconds.
+  const d = new Driver()
+  d.set(video('Video A'))
+  d.set(video('Video B', { playing: false }))
+  d.advance(400)
+  assert.strictEqual(d.title(), 'Video B', 'one settle window is enough for a weak tell')
+})
+
+test('pressing play on a newly opened video commits it at once', () => {
+  const d = new Driver()
+  d.set(video('Video A'))
+  d.set(video('Video B', { playing: false }))
+  d.set(video('Video B', { playing: true }))
+  assert.strictEqual(d.title(), 'Video B')
+})
+
+test('a weak tell still absorbs a brief flash', () => {
+  const d = new Driver()
+  d.set(video('Video A'))
+  d.set(video('Video B', { playing: false }))
+  d.advance(100)                       // inside the single settle window
+  assert.strictEqual(d.title(), 'Video A')
+  d.set(video('Video A'))              // it was only a flash
+  assert.strictEqual(d.title(), 'Video A')
+})
+
 // ── Learning ──────────────────────────────────────────────────────────────
 
 test('a track that flashes past and reverts is remembered', () => {
