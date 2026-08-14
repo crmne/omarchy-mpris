@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "id": "crmne.mpris",
-  "name": "MPRIS + Album Art",
-  "version": "1.0.0",
+  "name": "Media Controls + Album Art",
+  "version": "1.0.1",
   "author": "Carmine Paolino",
   "license": "MIT",
-  "description": "Compact MPRIS controls with album art and now-playing text for the Omarchy bar.",
+  "description": "Media controls for the Omarchy bar with live album art, now-playing details, and previous/play-pause/next buttons for Spotify and other players.",
   "kinds": [
     "service",
     "bar-widget"
@@ -16,8 +16,8 @@
     "barWidget": "BarWidget.qml"
   },
   "barWidget": {
-    "displayName": "MPRIS + album art",
-    "description": "Previous, play/pause, next, album art, and artist/title.",
+    "displayName": "Media controls + album art",
+    "description": "Album art, now-playing details, and previous/play-pause/next controls.",
     "category": "Media",
     "allowMultiple": false,
     "defaultSection": "right",

@@ -1,15 +1,16 @@
-# crmne MPRIS for Omarchy
+# Media Controls + Album Art for Omarchy
 
-A native Quattro/Quickshell bar plugin that restores the media cluster from the
-old Waybar setup:
+A native Quattro/Quickshell now-playing widget for the Omarchy bar, with media
+controls, live album art, and artist/title details:
 
-![MPRIS + Album Art in the Omarchy bar](preview.png)
+![Media Controls + Album Art in the Omarchy bar](preview.png)
 
 `previous` · `play/pause` · `next` · `album art` · `artist — title`
 
-The widget uses Quickshell's MPRIS service directly. It does not poll
-`playerctl`, download cover art into `/tmp`, or depend on the old Waybar
-scripts.
+It works with Spotify and other Linux media players that expose the standard
+MPRIS interface. The widget uses Quickshell's MPRIS service directly: it does
+not poll `playerctl`, download cover art into `/tmp`, or depend on the old
+Waybar scripts.
 
 ## Install
 
