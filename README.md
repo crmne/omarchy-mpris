@@ -7,6 +7,11 @@ controls, live album art, and artist/title details:
 
 `previous` · `play/pause` · `next` · `album art` · `artist — title`
 
+On crowded horizontal bars, the widget adapts independently on each monitor.
+It shortens the label first, then drops previous/next, play/pause, and artwork
+as necessary so it gives space back before the bar sections overlap. The full
+track details remain available in the tooltip.
+
 It works with Spotify and other Linux media players that expose the standard
 MPRIS interface. The widget uses Quickshell's MPRIS service directly: it does
 not poll `playerctl`, download cover art into `/tmp`, or depend on the old
@@ -41,9 +46,10 @@ omarchy-shell shell rescanPlugins
 omarchy plugin enable crmne.mpris --section right --before omarchy.tray
 ```
 
-Click album art or the label to raise the player. Middle/right click there go
-to the previous/next track. Scrolling anywhere over the controls also changes
-track.
+Click album art or the label to raise the player, and middle-click there for
+the previous track. Scrolling anywhere over the controls changes track.
+Right-click any part of the widget to open its appearance panel.
 
-The Omarchy bar settings UI exposes album-art size, label width, and whether
-the artist is shown.
+The appearance panel and Omarchy bar settings expose adaptive layout,
+transport controls, album artwork, artist visibility, album-art size, label
+width, and a maximum artist/title character count.

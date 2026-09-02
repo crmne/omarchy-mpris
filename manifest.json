@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "crmne.mpris",
   "name": "Media Controls + Album Art",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "author": "Carmine Paolino",
   "license": "MIT",
   "description": "Media controls for the Omarchy bar with live album art, now-playing details, and previous/play-pause/next buttons for Spotify and other players.",
@@ -22,11 +22,22 @@
     "allowMultiple": false,
     "defaultSection": "right",
     "defaults": {
+      "adaptiveLayout": true,
       "albumArtSize": 18,
+      "maxCharacters": 48,
       "maxLabelWidth": 300,
+      "showAlbumArt": true,
+      "showControls": true,
       "showArtist": true
     },
     "schema": [
+      {
+        "key": "adaptiveLayout",
+        "type": "boolean",
+        "label": "Adapt to available space",
+        "description": "Shrink this widget before the bar's left, center, and right sections overlap.",
+        "defaultValue": true
+      },
       {
         "key": "albumArtSize",
         "type": "integer",
@@ -38,6 +49,16 @@
         "defaultValue": 18
       },
       {
+        "key": "maxCharacters",
+        "type": "integer",
+        "label": "Maximum characters",
+        "description": "Maximum number of artist/title characters before an ellipsis is added.",
+        "min": 10,
+        "max": 120,
+        "step": 1,
+        "defaultValue": 48
+      },
+      {
         "key": "maxLabelWidth",
         "type": "integer",
         "label": "Maximum label width",
@@ -46,6 +67,20 @@
         "max": 600,
         "step": 10,
         "defaultValue": 300
+      },
+      {
+        "key": "showControls",
+        "type": "boolean",
+        "label": "Show transport controls",
+        "description": "Show previous, play/pause, and next buttons when space allows.",
+        "defaultValue": true
+      },
+      {
+        "key": "showAlbumArt",
+        "type": "boolean",
+        "label": "Show album art",
+        "description": "Show album artwork beside the track label when space allows.",
+        "defaultValue": true
       },
       {
         "key": "showArtist",
