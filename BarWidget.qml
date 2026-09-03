@@ -344,6 +344,7 @@ BarWidget {
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
         text: root.displayText
+        textFormat: Text.PlainText
         color: root.bar ? root.bar.barForeground : Color.foreground
         opacity: root.activePlayer && root.activePlayer.isPlaying ? 0.92 : 0.58
         font.family: root.bar ? root.bar.fontFamily : Style.font.family
@@ -395,6 +396,7 @@ BarWidget {
       Text {
         width: parent.width
         text: root.fullDisplayText || "No track metadata"
+        textFormat: Text.PlainText
         color: root.bar ? Qt.darker(root.bar.foreground, 1.45) : Color.foreground
         font.family: root.bar ? root.bar.fontFamily : Style.font.family
         font.pixelSize: Style.font.caption
