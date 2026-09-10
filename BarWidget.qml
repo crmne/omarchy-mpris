@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import qs.Commons
 import qs.Ui
+import "BarGeometry.js" as BarGeometry
 
 BarWidget {
   id: root
@@ -38,7 +39,7 @@ BarWidget {
   readonly property int horizontalPadding: Style.space(12)
   readonly property int preferredLabelWidth: Math.min(maxLabelWidth, Math.ceil(label.implicitWidth))
   readonly property int minimumAdaptiveLabelWidth: Math.min(preferredLabelWidth, Style.space(80))
-  property real adaptiveWidthBudget: 100000
+  property real adaptiveWidthBudget: 0
   readonly property int adaptiveStage: calculateAdaptiveStage()
   readonly property bool previousNextVisible: !vertical && showControls && adaptiveStage === 0
   readonly property bool playPauseVisible: vertical || (showControls && (adaptiveStage <= 1 || adaptiveStage === 4))
@@ -52,10 +53,17 @@ BarWidget {
   readonly property bool opened: settingsOpen
 
   visible: hasMedia
-  implicitWidth: hasMedia ? (vertical ? barSize : contents.implicitWidth + Style.space(12)) : 0
+  implicitWidth: {
+    if (!hasMedia) return 0
+    if (vertical) return barSize
+    var desired = contents.implicitWidth > 0 ? contents.implicitWidth + horizontalPadding : 0
+    return adaptiveLayout ? Math.min(desired, adaptiveWidthBudget) : desired
+  }
   implicitHeight: barSize
+  clip: !vertical && adaptiveLayout
 
   Behavior on implicitWidth {
+    enabled: !root.adaptiveLayout || root.vertical
     NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
   }
 
@@ -102,91 +110,19 @@ BarWidget {
       + Math.max(0, count - 1) * contentSpacing
   }
 
-  function hostSlot() {
-    var slots = bar && bar.moduleSlots ? bar.moduleSlots : []
-    for (var i = 0; i < slots.length; i++) {
-      if (slots[i] && slots[i].activeItem === root) return slots[i]
-    }
-    return null
-  }
-
   // Omarchy currently anchors its left, center, and right bar groups
   // independently. Measure the span left between this group and the other
   // groups so this widget can volunteer its own width before they overlap.
   function calculateAdaptiveWidthBudget() {
-    if (vertical || !adaptiveLayout || !bar || !bar.moduleSlots) return 100000
-
-    var ownSlot = hostSlot()
-    if (!ownSlot) return 100000
+    if (vertical || !adaptiveLayout) return 100000
 
     var window = null
     try {
       window = root.QsWindow.window
     } catch (e) {
     }
-    if (!window || !window.contentItem) return 100000
-
-    var screenWidth = Number(window.contentItem.width || window.width || 0)
-    if (screenWidth <= 0) return 100000
-
-    var region = String(ownSlot.region || "")
-    var sameRegionWidth = 0
-    var leftObstacle = Style.space(8)
-    var rightObstacle = screenWidth - Style.space(8)
-    var foundLeftObstacle = false
-    var foundRightObstacle = false
-    var slots = bar.moduleSlots
-
-    for (var i = 0; i < slots.length; i++) {
-      var slot = slots[i]
-      if (!slot || slot === ownSlot || slot.visible !== true || slot.width <= 0 || slot.height <= 0)
-        continue
-      if (slot.activeItem && slot.activeItem.visible !== true) continue
-
-      var slotWindow = null
-      try {
-        slotWindow = typeof bar.slotWindow === "function" ? bar.slotWindow(slot) : slot.QsWindow.window
-      } catch (e) {
-      }
-      if (!slotWindow) continue
-      if (typeof bar.sameWindow === "function" && !bar.sameWindow(slotWindow, window)) continue
-      if (typeof bar.sameWindow !== "function" && slotWindow !== window) continue
-
-      if (String(slot.region || "") === region) {
-        sameRegionWidth += Number(slot.width || 0)
-        continue
-      }
-
-      var point = null
-      try {
-        point = slot.mapToItem(window.contentItem, 0, 0)
-      } catch (e) {
-      }
-      if (!point) continue
-
-      if (region === "right") {
-        leftObstacle = Math.max(leftObstacle, Number(point.x) + Number(slot.width || 0))
-        foundLeftObstacle = true
-      } else if (region === "left") {
-        rightObstacle = Math.min(rightObstacle, Number(point.x))
-        foundRightObstacle = true
-      }
-    }
-
-    var edgeMargin = Style.space(8)
-    var collisionGap = Style.space(8)
-    if (region === "right") {
-      if (!foundLeftObstacle) leftObstacle = edgeMargin
-      return Math.max(0, screenWidth - edgeMargin - leftObstacle - collisionGap - sameRegionWidth)
-    }
-    if (region === "left") {
-      if (!foundRightObstacle) rightObstacle = screenWidth - edgeMargin
-      return Math.max(0, rightObstacle - edgeMargin - collisionGap - sameRegionWidth)
-    }
-
-    // A centered widget can sit on either side of the center anchor, so there
-    // is no stable one-sided budget to claim without cooperation from the bar.
-    return 100000
+    return BarGeometry.widthBudget(root, window ? window.contentItem : null,
+      Style.space(8), Style.space(8))
   }
 
   function refreshAdaptiveWidthBudget() {
@@ -206,7 +142,9 @@ BarWidget {
     if (showControls && budget >= widthFor(1, showAlbumArt, hasLabel, labelFloor)) return 1
     if (budget >= widthFor(0, showAlbumArt, hasLabel, labelFloor)) return 2
     if (budget >= widthFor(0, false, hasLabel, labelFloor)) return 3
-    return 4
+    var fallbackWidth = widthFor(showControls ? 1 : 0, !showControls && showAlbumArt,
+      !showControls && !showAlbumArt && hasLabel, 1)
+    return budget >= fallbackWidth ? 4 : 5
   }
 
   function calculateEffectiveLabelWidth() {
@@ -214,11 +152,9 @@ BarWidget {
     if (!adaptiveLayout) return preferredLabelWidth
 
     var buttons = (previousNextVisible ? 2 : 0) + (playPauseVisible ? 1 : 0)
-    var fixedOnly = widthFor(buttons, albumArtVisible, false, 0)
-    var fixedCount = buttons + (albumArtVisible ? 1 : 0)
-    var labelGap = fixedCount > 0 ? contentSpacing : 0
-    return Math.max(1, Math.min(preferredLabelWidth,
-      Math.floor(adaptiveWidthBudget - fixedOnly - labelGap)))
+    var fixedWidth = widthFor(buttons, albumArtVisible, true, 0)
+    return Math.max(0, Math.min(preferredLabelWidth,
+      Math.floor(adaptiveWidthBudget - fixedWidth)))
   }
 
   function close() {

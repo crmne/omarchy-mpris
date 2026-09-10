@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "crmne.mpris",
   "name": "Media Controls + Album Art",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "author": "Carmine Paolino",
   "license": "MIT",
   "description": "Media controls for the Omarchy bar with live album art, now-playing details, and previous/play-pause/next buttons for Spotify and other players.",

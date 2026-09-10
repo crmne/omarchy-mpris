@@ -12,6 +12,12 @@ It shortens the label first, then drops previous/next, play/pause, and artwork
 as necessary so it gives space back before the bar sections overlap. The full
 track details remain available in the tooltip.
 
+Adaptive sizing measures the visible slots in each bar window, including on
+hosts that expose the restricted plugin bar API. It applies in the left and
+right sections; centered placement still needs layout cooperation from the
+host. If even the compact control cannot fit, the widget temporarily hides
+until space is available again.
+
 It works with Spotify and other Linux media players that expose the standard
 MPRIS interface. The widget uses Quickshell's MPRIS service directly: it does
 not poll `playerctl`, download cover art into `/tmp`, or depend on the old
@@ -53,3 +59,11 @@ Right-click any part of the widget to open its appearance panel.
 The appearance panel and Omarchy bar settings expose adaptive layout,
 transport controls, album artwork, artist visibility, album-art size, label
 width, and a maximum artist/title character count.
+
+## Validation
+
+Run the geometry regression tests with Qt Quick Test:
+
+```bash
+QT_QPA_PLATFORM=offscreen /usr/lib/qt6/bin/qmltestrunner -input tests
+```
