@@ -21,7 +21,9 @@ until space is available again.
 It works with Spotify and other Linux media players that expose the standard
 MPRIS interface. The widget uses Quickshell's MPRIS service directly: it does
 not poll `playerctl`, download cover art into `/tmp`, or depend on the old
-Waybar scripts.
+Waybar scripts. It also works on custom or cloned bars, which do not receive
+the shell's plugin services: there the widget runs its own copy of the
+service.
 
 ## Install
 
@@ -62,7 +64,7 @@ width, and a maximum artist/title character count.
 
 ## Validation
 
-Run the geometry regression tests with Qt Quick Test:
+Run the geometry and service-lookup regression tests with Qt Quick Test:
 
 ```bash
 QT_QPA_PLATFORM=offscreen /usr/lib/qt6/bin/qmltestrunner -input tests

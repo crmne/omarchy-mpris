@@ -8,7 +8,7 @@ BarWidget {
   id: root
   moduleName: "crmne.mpris"
 
-  readonly property var mediaService: bar && bar.shell ? bar.shell.serviceFor("crmne.mpris") : null
+  readonly property var mediaService: serviceSource.service
   readonly property var activePlayer: mediaService ? mediaService.activePlayer : null
   readonly property bool hasMedia: mediaService ? mediaService.hasMedia : false
   readonly property string title: mediaService ? mediaService.title : ""
@@ -76,6 +76,14 @@ BarWidget {
   }
 
   onBarChanged: Qt.callLater(refreshAdaptiveWidthBudget)
+
+  ServiceSource {
+    id: serviceSource
+    bar: root.bar
+    serviceId: root.moduleName
+    // The shell's own instance keeps the IPC target.
+    fallback: Component { Service { ipcEnabled: false } }
+  }
 
   function previous() {
     if (mediaService) mediaService.previous()

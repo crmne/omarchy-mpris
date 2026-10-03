@@ -7,6 +7,7 @@ Item {
   id: root
 
   property string preferredPlayerKey: ""
+  property bool ipcEnabled: true
 
   readonly property var players: Mpris.players ? Mpris.players.values : []
   readonly property var sourcePlayers: availablePlayers()
@@ -133,6 +134,7 @@ Item {
   }
 
   IpcHandler {
+    enabled: root.ipcEnabled
     target: "crmne.mpris"
 
     function status(): string {
