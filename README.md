@@ -64,7 +64,8 @@ width, and a maximum artist/title character count.
 
 ## Validation
 
-Run the geometry and service-lookup regression tests with Qt Quick Test:
+Run the geometry, service-lookup, and label-truncation regression tests with
+Qt Quick Test:
 
 ```bash
 QT_QPA_PLATFORM=offscreen /usr/lib/qt6/bin/qmltestrunner -input tests

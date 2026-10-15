@@ -3,6 +3,7 @@ import Quickshell
 import qs.Commons
 import qs.Ui
 import "BarGeometry.js" as BarGeometry
+import "TextLimit.js" as TextLimit
 
 BarWidget {
   id: root
@@ -27,7 +28,7 @@ BarWidget {
     if (showArtist && artist && title) return artist + " — " + title
     return title || artist
   }
-  readonly property string displayText: limitCharacters(fullDisplayText, maxCharacters)
+  readonly property string displayText: TextLimit.limitCharacters(fullDisplayText, maxCharacters)
   readonly property string tooltipText: {
     var text = fullDisplayText
     if (album) text += (text ? "\n" : "") + album
@@ -99,13 +100,6 @@ BarWidget {
 
   function raisePlayer() {
     if (mediaService) mediaService.raisePlayer()
-  }
-
-  function limitCharacters(text, maximum) {
-    var value = String(text || "")
-    var limit = Math.max(1, Number(maximum) || 1)
-    if (value.length <= limit) return value
-    return value.slice(0, Math.max(1, limit - 1)).trim() + "…"
   }
 
   function widthFor(buttonCount, includeArt, includeLabel, labelWidth) {
