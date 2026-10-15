@@ -62,6 +62,29 @@ The appearance panel and Omarchy bar settings expose adaptive layout,
 transport controls, album artwork, artist visibility, album-art size, label
 width, and a maximum artist/title character count.
 
+## Screenshots
+
+`preview.png` shows the actual widget and its appearance panel with synthetic
+data: an invented artist and tracks and a self-drawn abstract cover. The top
+bar shows the full layout while playing; the smaller bar is a narrower bar
+where adaptive sizing has dropped previous/next for a paused track.
+
+`tools/capture/` copies the production `BarWidget.qml`, `BarGeometry.js`,
+`ServiceSource.qml` and `TextLimit.js` into a temporary offscreen Quickshell
+host with Omarchy's installed `Commons` and `Ui`, the Ristretto theme, and
+JetBrainsMono Nerd Font. `Service.qml` is replaced by a fixture with no MPRIS
+import, so the capture never sees or controls a real media player. The
+workspaces, clock and tray icons beside the widget are plain stand-ins drawn
+with the bar's font and colors. The background is Omarchy's Ristretto
+wallpaper, blurred and darkened.
+
+```bash
+gpu-lock /usr/bin/python3 -B tools/capture/capture.py [captures-dir]
+```
+
+`gpu-lock` is the maintainer's machine-wide GPU mutex. The script requests
+OpenGL and refuses a software-rendered capture.
+
 ## Validation
 
 Run the geometry, service-lookup, and label-truncation regression tests with
