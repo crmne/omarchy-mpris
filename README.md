@@ -65,9 +65,10 @@ width, and a maximum artist/title character count.
 ## Screenshots
 
 `preview.png` shows the actual widget and its appearance panel with synthetic
-data: an invented artist and tracks and a self-drawn abstract cover. The top
-bar shows the full layout while playing; the smaller bar is a narrower bar
-where adaptive sizing has dropped previous/next for a paused track.
+data: an invented artist and tracks and a self-drawn abstract cover. It shows
+the full layout while playing, with the panel opened under it, large and in the
+middle of the image, because the marketplace card shows only a wide strip from
+the middle and websites crop it to 16:9.
 
 `tools/capture/` copies the production `BarWidget.qml`, `BarGeometry.js`,
 `ServiceSource.qml` and `TextLimit.js` into a temporary offscreen Quickshell

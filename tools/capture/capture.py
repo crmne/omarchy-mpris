@@ -16,7 +16,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[2]
 TOOLS = Path(__file__).resolve().parent
-SCALE = 3
+SCALE = 6
 WALLPAPER = "/usr/share/omarchy/themes/ristretto/backgrounds/0-launch.png"
 
 
@@ -166,25 +166,28 @@ def capture_all(work, env, shell, plugin, output):
     (output / "capture.log").write_text(log_text)
     (output / "cover.png").unlink(missing_ok=True)
 
-    # Compose the 2560x1600 marketplace preview: bars at 1:1, settings at 85%.
-    sizes = {name: png_size(output / name) for name in ["bar.png", "bar-compact.png", "settings.png"]}
+    # Compose the 2560x1600 marketplace preview. The marketplace card shows
+    # only a strip about 2.7 times as wide as it is tall from the vertical
+    # middle, and websites crop to 16:9, so the widget is shown large in the
+    # middle band: the bar from just before the widget to its right edge,
+    # flush with the canvas edge like the real bar, and the appearance panel
+    # opening under it and running off the bottom.
+    sizes = {name: png_size(output / name) for name in ["bar.png", "settings.png"]}
     bar_w, bar_h = sizes["bar.png"]
-    compact_w, compact_h = sizes["bar-compact.png"]
     settings_w, settings_h = sizes["settings.png"]
     margin = 5 * SCALE  # Style.gapsOut between bar and popup.
-    # The settings card is taller than the canvas: show it at 85%.
-    card_h = round(settings_h * .85)
-    card_w = round(settings_w * .85)
-    widget_center = round((geometry["x"] + geometry["width"] / 2) * SCALE)
+    clip_x = round((geometry["x"] - 14) * SCALE)
+    # The rounded right end runs off the canvas, inside the tray margin.
+    bar_x, bar_y = 2560 - (bar_w - clip_x) + 10 * SCALE, 450
+    # The panel is shown at 80% so its toggles start inside the crops.
+    card_w, card_h = round(settings_w * .8), round(settings_h * .8)
+    widget_center = bar_x + round((geometry["x"] + geometry["width"] / 2) * SCALE) - clip_x
     card_x = max(40, min(widget_center - card_w // 2, 2560 - card_w - 40))
-    # The compact bar is cropped to its right half, from the clock that
-    # squeezes the widget to the bar's right edge.
-    clip_x = round((geometry["compactClockX"] - 12) * SCALE)
+    card_y = bar_y + bar_h + margin
     layout = [
-        dict(file="bar.png", x=0, y=0, width=2560, height=bar_h),
-        dict(file="settings.png", x=card_x, y=bar_h + margin, width=card_w, height=card_h),
-        dict(file="bar-compact.png", x=170, y=820, width=compact_w - clip_x, height=compact_h,
-             clip=[clip_x, 0, compact_w - clip_x, compact_h], radius=10 * SCALE),
+        dict(file="bar.png", x=bar_x, y=bar_y, width=bar_w - clip_x, height=bar_h,
+             clip=[clip_x, 0, bar_w - clip_x, bar_h], radius=10 * SCALE),
+        dict(file="settings.png", x=card_x, y=card_y, width=card_w, height=card_h),
     ]
     print("layout", layout, file=sys.stderr)
     env.update(QT_QPA_PLATFORM=f"offscreen:configfile={work / 'compose.json'}", QT_SCALE_FACTOR="1",
