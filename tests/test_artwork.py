@@ -9,6 +9,7 @@ endless, slow, and redirected answers never reach the cache, and that covers
 on disk are size-checked rather than copied.
 """
 
+import http.client
 import http.server
 import importlib.machinery
 import importlib.util
@@ -177,6 +178,34 @@ class RemoteArtwork(ArtworkCase):
         with self.assertRaises((helper.Blocked, helper.urllib.error.HTTPError)):
             helper.resolve(self.url("/to-file"), allow_http=True)
         self.assertEqual(len(self.entries()), 1, "only the cover that was allowed")
+
+    def test_a_redirect_body_is_never_read(self):
+        # CPython reads a redirect's body to the end before following it, so
+        # an endless one would grow the helper without bound.
+        class Endless:
+            closed = False
+            served = 0
+
+            def read(self, size=-1):
+                if self.closed:
+                    return b""
+                self.served += 1 << 20
+                return b"x" * (1 << 20)
+
+            def close(self):
+                self.closed = True
+
+        handler = helper.GuardedRedirects()
+        handler.parent = mock.Mock()
+        body = Endless()
+        request = helper.urllib.request.Request("https://example.com/a.png")
+        request.timeout = 5
+        headers = http.client.HTTPMessage()
+        headers["Location"] = "https://example.com/b.png"
+        handler.http_error_302(request, body, 302, "Found", headers)
+        handler.parent.open.assert_called_once()
+        self.assertTrue(body.closed)
+        self.assertEqual(body.served, 0)
 
     def test_plain_http_needs_the_flag(self):
         with self.assertRaises(helper.Blocked):
