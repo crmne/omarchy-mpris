@@ -20,8 +20,7 @@ until space is available again.
 
 It works with Spotify and other Linux media players that expose the standard
 MPRIS interface. The widget uses Quickshell's MPRIS service directly: it does
-not poll `playerctl`, download cover art into `/tmp`, or depend on the old
-Waybar scripts. It also works on custom or cloned bars, which do not receive
+not poll `playerctl` or depend on the old Waybar scripts. It also works on custom or cloned bars, which do not receive
 the shell's plugin services: there the widget runs its own copy of the
 service.
 
@@ -36,9 +35,29 @@ omarchy bar move crmne.mpris --section right --before omarchy.tray
 
 - Omarchy Quattro with its Quickshell-based shell.
 - At least one media player exposing the standard MPRIS interface.
+- `/usr/bin/python3` for the album-art helper. No extra packages.
 
-There are no additional packages or helper scripts. In particular, this plugin
-uses Quickshell's MPRIS service directly and does not require `playerctl`.
+This plugin uses Quickshell's MPRIS service directly and does not require
+`playerctl`.
+
+## Album art
+
+The shell never downloads album art itself. Given an `http(s)` URL, Qt's
+`Image` holds the whole response in memory before decoding it, so a cover
+server answering with something huge could exhaust the memory of the shell
+and every widget in it. Instead, the plugin runs `/usr/bin/python3` with
+`bin/artwork`, which downloads the cover the player advertises with a hard
+limit of 16 MiB and 20 seconds, refusing it as soon as either is passed, and
+the widget loads the result from a private cache under
+`~/.cache/omarchy/mpris/artwork`. The cache keeps the 64 most recent covers,
+up to 64 MiB in all.
+
+Covers the player keeps on disk (`file://`) are not copied: they are shown
+only if they are regular files within the same 16 MiB limit. The helper
+follows `http` and `https` only, re-checking every redirect, and ignores other
+URL schemes. The cover URL travels in the helper's environment, which only you
+can read, rather than on its command line, which every user on the machine can
+see.
 
 ## Remove
 
@@ -88,9 +107,10 @@ OpenGL and refuses a software-rendered capture.
 
 ## Validation
 
-Run the geometry, service-lookup, and label-truncation regression tests with
-Qt Quick Test:
+Run the geometry, service-lookup, label-truncation, and artwork regression
+tests with Qt Quick Test, and the artwork helper's tests with Python:
 
 ```bash
 QT_QPA_PLATFORM=offscreen /usr/lib/qt6/bin/qmltestrunner -input tests
+python3 -m unittest discover -s tests
 ```

@@ -15,7 +15,7 @@ BarWidget {
   readonly property string title: mediaService ? mediaService.title : ""
   readonly property string artist: mediaService ? mediaService.artist : ""
   readonly property string album: mediaService ? mediaService.album : ""
-  readonly property string artUrl: mediaService ? mediaService.artUrl : ""
+  readonly property string artSource: mediaService ? String(mediaService.artSource || "") : ""
   readonly property bool showArtist: setting("showArtist", true) === true
   readonly property bool showControls: setting("showControls", true) === true
   readonly property bool showAlbumArt: setting("showAlbumArt", true) === true
@@ -234,7 +234,7 @@ BarWidget {
         id: cover
         anchors.fill: parent
         anchors.margins: 1
-        source: root.artUrl
+        source: root.artSource
         sourceSize.width: Math.round(width * Screen.devicePixelRatio)
         sourceSize.height: Math.round(height * Screen.devicePixelRatio)
         fillMode: Image.PreserveAspectCrop
@@ -245,7 +245,7 @@ BarWidget {
 
       Text {
         anchors.centerIn: parent
-        visible: root.artUrl === "" || cover.status === Image.Error
+        visible: root.artSource === "" || cover.status === Image.Error
         text: "󰝚"
         color: root.bar ? root.bar.barForeground : Color.foreground
         font.family: root.bar ? root.bar.fontFamily : Style.font.family

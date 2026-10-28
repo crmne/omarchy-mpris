@@ -11,6 +11,8 @@ QtObject {
   property string artist: ""
   property string album: ""
   property string artUrl: ""
+  // The fixture's cover is already a local file, so there is nothing to fetch.
+  readonly property string artSource: artUrl
   readonly property bool hasMedia: title !== "" || artist !== ""
   readonly property QtObject activePlayer: QtObject {
     readonly property bool isPlaying: fixture.playing

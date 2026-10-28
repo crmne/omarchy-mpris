@@ -1,0 +1,297 @@
+#!/usr/bin/env python3
+"""Make a player's album art safe for the shell to load, printed as JSON.
+
+A media player advertises its cover as a URL in the track metadata, and Qt's
+Image, given an http(s) URL, holds the whole response in memory before it
+decodes a byte of it. A cover server that answers with gigabytes would take
+the shell, and every widget in it, down with it. So the shell never fetches
+artwork itself: it runs this helper, which downloads the cover with a hard
+byte limit into a private cache and prints the local file Image may load.
+
+The URL arrives in ARTWORK_URL rather than on the command line, since it
+names the track and a process's arguments are readable by every user on the
+machine. The command line carries only fixed flags. ARTWORK_REQUEST, if
+set, is echoed back so the shell can tell this run's answer from a stale one.
+
+    {"ok": true, "request": "7", "source": "file:///home/me/.cache/.../<sha256>"}
+    {"ok": false, "request": "7", "code": "too_large", "error": "..."}
+
+Covers the player keeps on disk (file://) are not copied: they are checked to
+be regular files within the same limit, and printed back unchanged.
+"""
+
+import argparse
+import errno
+import hashlib
+import json
+import os
+import re
+import signal
+import stat
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+
+VERSION = "1.0.0"
+UA = "omarchy-artwork/%s" % VERSION
+CACHE_DIR = os.path.join(
+    os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache")),
+    "omarchy", "mpris", "artwork")
+
+# Real covers are tens to hundreds of kilobytes; a scanned cover on disk can
+# run to several megabytes. Nothing larger is downloaded or handed to Qt.
+MAX_ARTWORK_BYTES = 16 * 1024 * 1024
+# The cache holds the most recent covers and no more than this in all.
+MAX_CACHE_ENTRIES = 64
+MAX_CACHE_BYTES = 64 * 1024 * 1024
+CACHE_TTL_SECONDS = 30 * 86400
+MAX_URL_CHARS = 4096
+MAX_REDIRECTS = 5
+# One deadline for the whole run: socket timeouts are per read, so a server
+# trickling a byte at a time could otherwise hold the helper open for as long
+# as it liked. The shell also runs this under `timeout`, a little longer.
+DEADLINE_SECONDS = 20
+SOCKET_TIMEOUT_SECONDS = 10
+CHUNK_BYTES = 64 * 1024
+ENTRY_NAME = re.compile(r"^[0-9a-f]{64}$")
+
+
+class Blocked(Exception):
+    """A URL this helper will not load, whatever supplied it."""
+
+
+class TooLarge(Exception):
+    """More bytes than any cover needs."""
+
+
+class TooSlow(Exception):
+    """The download did not finish before the deadline."""
+
+
+def give_up(signum, frame):
+    raise TooSlow("the artwork server took too long to answer")
+
+
+def remote_schemes(allow_http):
+    return ("http", "https") if allow_http else ("https",)
+
+
+def check_remote(url, allow_http):
+    """The URL, if it is one this helper downloads; Blocked otherwise.
+
+    Only http(s) with a host. Everything else (another scheme, a URL with
+    whitespace or control characters in it) is refused outright rather than
+    handed to a library that may read it differently.
+    """
+    url = str(url or "")
+    if len(url) > MAX_URL_CHARS or re.search(r"[\x00-\x20\x7f\\]", url):
+        raise Blocked("refusing to fetch that artwork URL")
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme.lower() not in remote_schemes(allow_http) or not parts.hostname:
+        raise Blocked("refusing to fetch artwork over %s" % (parts.scheme or "that URL"))
+    return url
+
+
+class GuardedRedirects(urllib.request.HTTPRedirectHandler):
+    """Re-checks every hop: an allowed URL may still redirect anywhere."""
+
+    max_redirections = MAX_REDIRECTS
+    allow_http = False
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        check_remote(newurl, self.allow_http)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def opener(allow_http):
+    redirects = GuardedRedirects()
+    redirects.allow_http = allow_http
+    return urllib.request.build_opener(redirects)
+
+
+def cache_dir():
+    """The cache directory, created private, or None when it is not ours."""
+    os.makedirs(CACHE_DIR, mode=0o700, exist_ok=True)
+    info = os.lstat(CACHE_DIR)
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
+        return None
+    if stat.S_IMODE(info.st_mode) & 0o077:
+        os.chmod(CACHE_DIR, 0o700)
+    return CACHE_DIR
+
+
+def file_url(path):
+    return "file://" + urllib.parse.quote(path)
+
+
+def cached_entry(path):
+    """True when `path` is a fresh cover this helper wrote: a regular file of
+    ours, not a symlink, within the size limit."""
+    try:
+        info = os.lstat(path)
+    except OSError:
+        return False
+    return (stat.S_ISREG(info.st_mode) and info.st_uid == os.getuid()
+            and 0 < info.st_size <= MAX_ARTWORK_BYTES
+            and time.time() - info.st_mtime < CACHE_TTL_SECONDS)
+
+
+def download(url, path, allow_http):
+    """Stream the cover into `path`, refusing it once it passes the limit.
+
+    The body goes through a private temporary file and an atomic rename, so
+    Qt never sees a partial cover and nothing outside the limit is kept.
+    """
+    request = urllib.request.Request(check_remote(url, allow_http), headers={
+        "User-Agent": UA, "Accept": "image/*", "Accept-Encoding": "identity"})
+    with opener(allow_http).open(request, timeout=SOCKET_TIMEOUT_SECONDS) as response:
+        length = (response.headers.get("Content-Length") or "").strip()
+        if length.isdigit() and int(length) > MAX_ARTWORK_BYTES:
+            raise TooLarge("the artwork is larger than %d bytes" % MAX_ARTWORK_BYTES)
+        encoding = (response.headers.get("Content-Encoding") or "").strip().lower()
+        if encoding not in ("", "identity"):
+            raise Blocked("the artwork server sent a %s-encoded response" % encoding)
+        fd, temporary = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".part-")
+        try:
+            total = 0
+            with os.fdopen(fd, "wb") as handle:
+                while True:
+                    chunk = response.read(min(CHUNK_BYTES, MAX_ARTWORK_BYTES + 1 - total))
+                    if not chunk:
+                        break
+                    total += len(chunk)
+                    if total > MAX_ARTWORK_BYTES:
+                        raise TooLarge("the artwork is larger than %d bytes" % MAX_ARTWORK_BYTES)
+                    handle.write(chunk)
+            if total == 0:
+                raise ValueError("the artwork server sent an empty response")
+            os.replace(temporary, path)
+        except BaseException:
+            try:
+                os.unlink(temporary)
+            except OSError:
+                pass
+            raise
+
+
+def prune(directory, keep):
+    """Drop the oldest covers past the entry and byte limits, and any partial
+    download a killed run left behind."""
+    entries = []
+    now = time.time()
+    for name in os.listdir(directory):
+        path = os.path.join(directory, name)
+        try:
+            info = os.lstat(path)
+        except OSError:
+            continue
+        if name.startswith(".part-"):
+            if now - info.st_mtime > 600:
+                remove(path)
+            continue
+        if ENTRY_NAME.match(name) and stat.S_ISREG(info.st_mode):
+            entries.append((name == keep, info.st_mtime, info.st_size, path))
+    entries.sort(reverse=True)
+    count = total = 0
+    for _, _, size, path in entries:
+        count += 1
+        total += size
+        if count > MAX_CACHE_ENTRIES or total > MAX_CACHE_BYTES:
+            remove(path)
+
+
+def remove(path):
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+
+
+def remote(url, allow_http):
+    check_remote(url, allow_http)
+    directory = cache_dir()
+    if not directory:
+        raise Blocked("the artwork cache directory is not private")
+    name = hashlib.sha256(url.encode("utf-8")).hexdigest()
+    path = os.path.join(directory, name)
+    if not cached_entry(path):
+        download(url, path, allow_http)
+        prune(directory, name)
+    return file_url(path)
+
+
+def local(url):
+    """A cover on disk, printed back unchanged if Qt may safely read it.
+
+    Opened without blocking, so a FIFO cannot stall the helper, and judged
+    from that descriptor: only a regular file within the limit passes.
+    """
+    parts = urllib.parse.urlsplit(url)
+    if parts.netloc not in ("", "localhost") or parts.query or parts.fragment:
+        raise Blocked("refusing artwork on another host")
+    path = urllib.parse.unquote(parts.path)
+    if not path.startswith("/") or "\x00" in path:
+        raise Blocked("refusing that artwork path")
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0))
+    except OSError as exc:
+        raise Blocked("cannot read the artwork: %s" % (exc.strerror or errno.errorcode.get(exc.errno, "")))
+    try:
+        info = os.fstat(fd)
+    finally:
+        os.close(fd)
+    if not stat.S_ISREG(info.st_mode):
+        raise Blocked("the artwork is not a regular file")
+    if info.st_size > MAX_ARTWORK_BYTES:
+        raise TooLarge("the artwork is larger than %d bytes" % MAX_ARTWORK_BYTES)
+    return url
+
+
+def resolve(url, allow_http):
+    url = str(url or "")
+    scheme = urllib.parse.urlsplit(url).scheme.lower() if url else ""
+    if scheme == "file":
+        return local(url)
+    return remote(url, allow_http)
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--allow-http", action="store_true",
+                        help="also download artwork over plain http")
+    args = parser.parse_args(argv)
+    # Popped rather than read, so nothing this script starts inherits it.
+    url = os.environ.pop("ARTWORK_URL", "")
+    request = os.environ.pop("ARTWORK_REQUEST", "")[:32]
+    signal.signal(signal.SIGALRM, give_up)
+    signal.alarm(DEADLINE_SECONDS)
+    try:
+        payload = {"ok": True, "source": resolve(url, args.allow_http)}
+    except TooSlow as exc:
+        payload = {"ok": False, "code": "timeout", "error": str(exc)}
+    except Blocked as exc:
+        payload = {"ok": False, "code": "blocked", "error": str(exc)}
+    except TooLarge as exc:
+        payload = {"ok": False, "code": "too_large", "error": str(exc)}
+    except urllib.error.HTTPError as exc:
+        exc.close()
+        payload = {"ok": False, "code": "http", "error": "the artwork server returned HTTP %d" % exc.code}
+    except urllib.error.URLError as exc:
+        payload = {"ok": False, "code": "network", "error": "cannot reach the artwork server: %s" % exc.reason}
+    except ValueError as exc:
+        payload = {"ok": False, "code": "parse", "error": str(exc)}
+    except Exception as exc:
+        payload = {"ok": False, "code": "internal", "error": "%s: %s" % (type(exc).__name__, exc)}
+    finally:
+        signal.alarm(0)
+    payload["request"] = request
+    sys.stdout.write(json.dumps(payload))
+    sys.stdout.write("\n")
+    return 0 if payload.get("ok") else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

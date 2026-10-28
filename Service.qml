@@ -19,6 +19,9 @@ Item {
   readonly property string artist: activePlayer ? String(activePlayer.trackArtist || "") : ""
   readonly property string album: activePlayer ? String(activePlayer.trackAlbum || "") : ""
   readonly property string artUrl: activePlayer ? String(activePlayer.trackArtUrl || "") : ""
+  // What the bar's Image loads: never the player's URL itself, which Qt would
+  // download without a size limit. See Artwork.qml.
+  readonly property string artSource: artwork.source
 
   function playerKey(player) {
     if (!player) return ""
@@ -131,6 +134,13 @@ Item {
       canGoPrevious: !!(player && player.canGoPrevious),
       canGoNext: !!(player && player.canGoNext)
     }
+  }
+
+  Artwork {
+    id: artwork
+    url: root.artUrl
+    // Plain http covers have always shown here, so they still do.
+    allowHttp: true
   }
 
   IpcHandler {
