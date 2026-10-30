@@ -7,10 +7,15 @@ controls, live album art, and artist/title details:
 
 `previous` · `play/pause` · `next` · `album art` · `artist — title`
 
+Optional seek buttons go back and forward 10 seconds:
+`previous` · `back 10 s` · `play/pause` · `forward 10 s` · `next`. Turn them on
+with "Show seek buttons" in the appearance panel. They are disabled when the
+player does not support seeking.
+
 On crowded horizontal bars, the widget adapts independently on each monitor.
-It shortens the label first, then drops previous/next, play/pause, and artwork
-as necessary so it gives space back before the bar sections overlap. The full
-track details remain available in the tooltip.
+It shortens the label first, then drops previous/next and the seek buttons,
+play/pause, and artwork as necessary so it gives space back before the bar
+sections overlap. The full track details remain available in the tooltip.
 
 Adaptive sizing measures the visible slots in each bar window, including on
 hosts that expose the restricted plugin bar API. It applies in the left and
@@ -78,8 +83,8 @@ the previous track. Scrolling anywhere over the controls changes track.
 Right-click any part of the widget to open its appearance panel.
 
 The appearance panel and Omarchy bar settings expose adaptive layout,
-transport controls, album artwork, artist visibility, album-art size, label
-width, and a maximum artist/title character count.
+transport controls, seek buttons, album artwork, artist visibility, album-art
+size, label width, and a maximum artist/title character count.
 
 ## Screenshots
 
@@ -90,13 +95,13 @@ middle of the image, because the marketplace card shows only a wide strip from
 the middle and websites crop it to 16:9.
 
 `tools/capture/` copies the production `BarWidget.qml`, `BarGeometry.js`,
-`ServiceSource.qml` and `TextLimit.js` into a temporary offscreen Quickshell
-host with Omarchy's installed `Commons` and `Ui`, the Ristretto theme, and
-JetBrainsMono Nerd Font. `Service.qml` is replaced by a fixture with no MPRIS
-import, so the capture never sees or controls a real media player. The
-workspaces, clock and tray icons beside the widget are plain stand-ins drawn
-with the bar's font and colors. The background is Omarchy's Ristretto
-wallpaper, blurred and darkened.
+`ServiceSource.qml`, `TextLimit.js` and `Transport.js` into a temporary
+offscreen Quickshell host with Omarchy's installed `Commons` and `Ui`, the
+Ristretto theme, and JetBrainsMono Nerd Font. `Service.qml` is replaced by a
+fixture with no MPRIS import, so the capture never sees or controls a real
+media player. The workspaces, clock and tray icons beside the widget are plain
+stand-ins drawn with the bar's font and colors. The background is Omarchy's
+Ristretto wallpaper, blurred and darkened.
 
 ```bash
 gpu-lock /usr/bin/python3 -B tools/capture/capture.py [captures-dir]
@@ -107,8 +112,9 @@ OpenGL and refuses a software-rendered capture.
 
 ## Validation
 
-Run the geometry, service-lookup, label-truncation, and artwork regression
-tests with Qt Quick Test, and the artwork helper's tests with Python:
+Run the geometry, service-lookup, label-truncation, seek, and artwork
+regression tests with Qt Quick Test, and the artwork helper's tests with
+Python:
 
 ```bash
 QT_QPA_PLATFORM=offscreen /usr/lib/qt6/bin/qmltestrunner -input tests

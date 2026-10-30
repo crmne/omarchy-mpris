@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.Services.Mpris
+import "Transport.js" as Transport
 
 Item {
   id: root
@@ -113,6 +114,13 @@ Item {
     return true
   }
 
+  function seekBy(seconds) {
+    var player = activePlayer
+    if (!Transport.seekBy(player, seconds)) return false
+    remember(player)
+    return true
+  }
+
   function raisePlayer() {
     var player = activePlayer
     if (!player || !player.canRaise) return false
@@ -132,7 +140,8 @@ Item {
       album: album,
       artUrl: artUrl,
       canGoPrevious: !!(player && player.canGoPrevious),
-      canGoNext: !!(player && player.canGoNext)
+      canGoNext: !!(player && player.canGoNext),
+      canSeek: !!(player && player.canSeek)
     }
   }
 
@@ -161,6 +170,10 @@ Item {
 
     function next(): string {
       return root.next() ? "ok" : "unhandled"
+    }
+
+    function seekBy(seconds: real): string {
+      return root.seekBy(seconds) ? "ok" : "unhandled"
     }
 
     function raise(): string {
