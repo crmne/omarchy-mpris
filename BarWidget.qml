@@ -4,6 +4,7 @@ import qs.Commons
 import qs.Ui
 import "BarGeometry.js" as BarGeometry
 import "TextLimit.js" as TextLimit
+import "Transport.js" as Transport
 
 BarWidget {
   id: root
@@ -18,6 +19,7 @@ BarWidget {
   readonly property string artSource: mediaService ? String(mediaService.artSource || "") : ""
   readonly property bool showArtist: setting("showArtist", true) === true
   readonly property bool showControls: setting("showControls", true) === true
+  readonly property bool showSeekControls: setting("showSeekControls", false) === true
   readonly property bool showAlbumArt: setting("showAlbumArt", true) === true
   readonly property bool adaptiveLayout: setting("adaptiveLayout", true) === true
   readonly property int maxCharacters: Math.max(10, Math.min(120, Number(setting("maxCharacters", 48))))
@@ -43,6 +45,7 @@ BarWidget {
   property real adaptiveWidthBudget: 0
   readonly property int adaptiveStage: calculateAdaptiveStage()
   readonly property bool previousNextVisible: !vertical && showControls && adaptiveStage === 0
+  readonly property bool seekVisible: previousNextVisible && showSeekControls
   readonly property bool playPauseVisible: vertical || (showControls && (adaptiveStage <= 1 || adaptiveStage === 4))
   readonly property bool albumArtVisible: !vertical && showAlbumArt
     && (adaptiveStage <= 2 || (adaptiveStage === 4 && !showControls))
@@ -102,6 +105,10 @@ BarWidget {
     if (mediaService) mediaService.raisePlayer()
   }
 
+  function seekBy(seconds) {
+    if (mediaService) mediaService.seekBy(seconds)
+  }
+
   function widthFor(buttonCount, includeArt, includeLabel, labelWidth) {
     var count = buttonCount + (includeArt ? 1 : 0) + (includeLabel ? 1 : 0)
     if (count === 0) return 0
@@ -137,7 +144,7 @@ BarWidget {
 
     var hasLabel = displayText !== ""
     var labelFloor = hasLabel ? minimumAdaptiveLabelWidth : 0
-    var buttons = showControls ? 3 : 0
+    var buttons = showControls ? (showSeekControls ? 5 : 3) : 0
     var budget = adaptiveWidthBudget
 
     if (budget >= widthFor(buttons, showAlbumArt, hasLabel, labelFloor)) return 0
@@ -153,7 +160,7 @@ BarWidget {
     if (!labelVisible) return 0
     if (!adaptiveLayout) return preferredLabelWidth
 
-    var buttons = (previousNextVisible ? 2 : 0) + (playPauseVisible ? 1 : 0)
+    var buttons = (previousNextVisible ? 2 : 0) + (seekVisible ? 2 : 0) + (playPauseVisible ? 1 : 0)
     var fixedWidth = widthFor(buttons, albumArtVisible, true, 0)
     return Math.max(0, Math.min(preferredLabelWidth,
       Math.floor(adaptiveWidthBudget - fixedWidth)))
@@ -202,11 +209,27 @@ BarWidget {
     }
 
     TransportButton {
+      iconText: "󰴪"
+      tooltip: "Back " + Transport.SEEK_STEP + " seconds"
+      enabled: !!(root.activePlayer && root.activePlayer.canSeek)
+      visible: root.seekVisible
+      onTriggered: root.seekBy(-Transport.SEEK_STEP)
+    }
+
+    TransportButton {
       iconText: root.activePlayer && root.activePlayer.isPlaying ? "󰏤" : "󰐊"
       tooltip: root.activePlayer && root.activePlayer.isPlaying ? "Pause" : "Play"
       enabled: !!(root.activePlayer && (root.activePlayer.canPlay || root.activePlayer.canPause || root.activePlayer.canTogglePlaying))
       visible: root.playPauseVisible
       onTriggered: root.playPause()
+    }
+
+    TransportButton {
+      iconText: "󰵱"
+      tooltip: "Forward " + Transport.SEEK_STEP + " seconds"
+      enabled: !!(root.activePlayer && root.activePlayer.canSeek)
+      visible: root.seekVisible
+      onTriggered: root.seekBy(Transport.SEEK_STEP)
     }
 
     TransportButton {
@@ -398,6 +421,17 @@ BarWidget {
         accent: Color.accent
         fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
         onClicked: root.saveSetting("showControls", !root.showControls)
+      }
+
+      Toggle {
+        width: parent.width
+        label: "Show seek buttons"
+        description: "Back and forward " + Transport.SEEK_STEP + " seconds, with the transport controls."
+        checked: root.showSeekControls
+        foreground: root.bar ? root.bar.foreground : Color.foreground
+        accent: Color.accent
+        fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
+        onClicked: root.saveSetting("showSeekControls", !root.showSeekControls)
       }
 
       Toggle {
