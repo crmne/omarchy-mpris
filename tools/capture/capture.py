@@ -3,7 +3,7 @@
 
 Never touches a real media player: Service.qml is replaced by a fixture with
 no MPRIS import. Runs fully offscreen with its own HOME and runtime directory.
-Run through gpu-lock; refuses a software-rendered capture.
+Refuses a software-rendered capture.
 """
 import json
 import os
@@ -17,7 +17,7 @@ import time
 ROOT = Path(__file__).resolve().parents[2]
 TOOLS = Path(__file__).resolve().parent
 SCALE = 6
-WALLPAPER = "/usr/share/omarchy/themes/ristretto/backgrounds/0-launch.png"
+WALLPAPER = "/usr/share/omarchy/themes/ristretto/backgrounds/0-launch.webp"
 
 
 def wait_for(predicate, description, timeout=20):
@@ -98,8 +98,9 @@ def run_host(env, shell, log, body):
     for line in text.splitlines():
         if "OpenGL VENDOR" in line or "OpenGL RENDERER" in line or "WARN" in line or "ERROR" in line:
             print(line, file=sys.stderr)
-    if "NVIDIA" not in text or "llvmpipe" in text or "Software" in text:
-        raise RuntimeError("Capture must use NVIDIA GPU rendering; inspect " + str(log))
+    renderers = [line for line in text.splitlines() if "OpenGL RENDERER" in line or "RENDERER:" in line]
+    if not renderers or any(soft in line for line in renderers for soft in ("llvmpipe", "softpipe", "Software")):
+        raise RuntimeError("Capture must use GPU rendering; inspect " + str(log))
     return text
 
 

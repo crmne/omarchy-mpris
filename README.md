@@ -125,11 +125,10 @@ stand-ins drawn with the bar's font and colors. The background is Omarchy's
 Ristretto wallpaper, blurred and darkened.
 
 ```bash
-gpu-lock /usr/bin/python3 -B tools/capture/capture.py [captures-dir]
+/usr/bin/python3 -B tools/capture/capture.py [captures-dir]
 ```
 
-`gpu-lock` is the maintainer's machine-wide GPU mutex. The script requests
-OpenGL and refuses a software-rendered capture.
+The script requests OpenGL and refuses a software-rendered capture.
 
 ## Validation
 
