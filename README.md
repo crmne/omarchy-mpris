@@ -14,9 +14,13 @@ track details remain available in the tooltip.
 
 Adaptive sizing measures the visible slots in each bar window, including on
 hosts that expose the restricted plugin bar API. It applies in the left and
-right sections; centered placement still needs layout cooperation from the
-host. If even the compact control cannot fit, the widget temporarily hides
-until space is available again.
+right sections. In the center sections (`centerBegin`, `center` and
+`centerEnd` on Omarchy 4.5) the widget keeps its full layout, because centered
+placement still needs layout cooperation from the host. Where a display notch
+moves the center sections beside the right one, a widget in the right section
+shares the room up to the left section with them. If even the compact
+control cannot fit, the widget temporarily hides until space is available
+again.
 
 It works with Spotify and other Linux media players that expose the standard
 MPRIS interface. The widget uses Quickshell's MPRIS service directly: it does

@@ -50,6 +50,35 @@ TestCase {
     }
   }
 
+  Component {
+    id: notchComponent
+    Item {
+      width: 1600
+      height: 26
+      property alias ownSlot: media
+      property alias endSlot: end
+      property alias sections: sections
+      property alias widget: media.activeItem
+
+      function place() {
+        media.x = width - 8 - media.width
+        sections.x = media.x - 4 - sections.width
+      }
+
+      Slot { region: "left"; x: 8; width: 300 }
+      // Omarchy 4.5 anchors the center sections 4 px left of the right
+      // section where a display notch covers the middle of the bar.
+      Item {
+        id: sections
+        property bool besideRight: true
+        width: end.width
+        height: 26
+        Slot { id: end; region: "centerEnd"; width: 154 }
+      }
+      Slot { id: media; width: 0 }
+    }
+  }
+
   function fixture() {
     return createTemporaryObject(fixtureComponent, testCase)
   }
@@ -112,6 +141,44 @@ TestCase {
     compare(budget(scene), 587)
     scene.sibling.visible = false
     compare(budget(scene), 718)
+  }
+
+  function test_centerSections() {
+    var scene = fixture()
+    // Omarchy 4.5 places widgets beside the clock in centerBegin and centerEnd.
+    for (var region of ["centerBegin", "center", "centerEnd"]) {
+      scene.ownSlot.region = region
+      compare(Geometry.hostSlot(scene.widget), scene.ownSlot)
+      compare(budget(scene), 100000)
+    }
+  }
+
+  function test_centerSectionsAreObstacles() {
+    var scene = fixture()
+    for (var region of ["centerBegin", "centerEnd"]) {
+      scene.clockSlot.region = region
+      compare(budget(scene), 113)
+    }
+  }
+
+  function test_centerSectionsBesideRight() {
+    var scene = createTemporaryObject(notchComponent, testCase)
+    // The centerEnd slot moves with this widget's width, so it must not
+    // become a budget of the current width minus the gap.
+    for (var width of [0, 406, 32, 1114, 0]) {
+      scene.ownSlot.width = width
+      scene.place()
+      compare(budget(scene), 1114)
+    }
+    scene.endSlot.width = 254
+    scene.sections.width = 254
+    scene.place()
+    compare(budget(scene), 1014)
+    // Without the notch the sections stay put and remain an obstacle.
+    scene.sections.besideRight = false
+    scene.ownSlot.width = 0
+    scene.place()
+    compare(budget(scene), 0)
   }
 
   function test_missingGeometry() {
