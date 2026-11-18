@@ -18,12 +18,13 @@ play/pause, and artwork as necessary so it gives space back before the bar
 sections overlap. The full track details remain available in the tooltip.
 
 Adaptive sizing measures the visible slots in each bar window, including on
-hosts that expose the restricted plugin bar API. It applies in the left and
-right sections. In the center sections (`centerBegin`, `center` and
-`centerEnd` on Omarchy 4.5) the widget keeps its full layout, because centered
-placement still needs layout cooperation from the host. Where a display notch
-moves the center sections beside the right one, a widget in the right section
-shares the room up to the left section with them. If even the compact
+hosts that expose the restricted plugin bar API. It works in every section of
+Omarchy 4.5's bar: in the left and right sections, in `centerEnd` up to the
+right section and in `centerBegin` up to the left one, and in the centered
+`center` box, which grows both ways, with twice the room on its tighter side.
+Where a display notch moves the center sections beside the right one, all of
+them share the room up to the left section. In the tray's drawer, and on bars
+it cannot measure, the widget keeps its full layout. If even the compact
 control cannot fit, the widget temporarily hides until space is available
 again.
 

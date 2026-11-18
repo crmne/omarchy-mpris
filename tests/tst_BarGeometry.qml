@@ -79,6 +79,78 @@ TestCase {
     }
   }
 
+  // Omarchy 4.5's horizontal bar: the left and right sections held 8 px in
+  // from its ends, and the center sections, where the box is centered and
+  // centerBegin and centerEnd hang off its edges. Beside a display notch the
+  // three run on 4 px left of the right section. place() lays every slot out
+  // from the widths, as the host does, so a budget that followed the
+  // widget's own width would change between widths.
+  Component {
+    id: centerComponent
+    Item {
+      id: bar
+      width: 1600
+      height: 26
+      property alias sections: sections
+      property alias leftSlot: leftSlot
+      property alias rightSlot: rightSlot
+      property alias beginSlot: beginSlot
+      property alias clockSlot: clockSlot
+      property alias endSlot: endSlot
+      property alias ownSlot: media
+      property alias widget: media.activeItem
+      property var lists: ({ centerBegin: [beginSlot], center: [clockSlot], centerEnd: [endSlot] })
+
+      function sum(list) {
+        var total = 0
+        for (var slot of list) total += slot.width
+        return total
+      }
+
+      function place() {
+        leftSlot.x = 8
+        rightSlot.x = width - 8 - rightSlot.width
+        var begin = sum(lists.centerBegin)
+        var box = sum(lists.center)
+        if (sections.besideRight) {
+          sections.width = begin + box + sum(lists.centerEnd)
+          sections.x = rightSlot.x - 4 - sections.width
+        } else {
+          sections.width = width
+          sections.x = 0
+        }
+        var start = sections.besideRight ? begin : Math.round((sections.width - box) / 2)
+        var x = start
+        for (var slot of lists.center) { slot.x = x; x += slot.width }
+        for (slot of lists.centerEnd) { slot.x = x; x += slot.width }
+        x = start
+        for (var i = lists.centerBegin.length - 1; i >= 0; i--) {
+          x -= lists.centerBegin[i].width
+          lists.centerBegin[i].x = x
+        }
+      }
+
+      // Puts this widget in a section, at an index of its list.
+      function move(region, index) {
+        for (var key in lists) lists[key] = lists[key].filter(function(slot) { return slot !== media })
+        lists[region].splice(index, 0, media)
+        media.region = region
+      }
+
+      Slot { id: leftSlot; region: "left"; width: 300 }
+      Item {
+        id: sections
+        property bool besideRight: false
+        height: 26
+        Slot { id: beginSlot; region: "centerBegin"; width: 60 }
+        Slot { id: clockSlot; region: "center"; width: 154 }
+        Slot { id: endSlot; region: "centerEnd"; width: 60 }
+        Slot { id: media; region: "centerEnd"; width: 0 }
+      }
+      Slot { id: rightSlot; region: "right"; width: 200 }
+    }
+  }
+
   function fixture() {
     return createTemporaryObject(fixtureComponent, testCase)
   }
@@ -143,14 +215,82 @@ TestCase {
     compare(budget(scene), 718)
   }
 
-  function test_centerSections() {
+  function centerFixture(region, index) {
+    var scene = createTemporaryObject(centerComponent, testCase)
+    scene.move(region, index)
+    return scene
+  }
+
+  // The budget for each of the widget's widths, laid out again each time.
+  function budgets(scene, widths) {
+    var result = []
+    for (var width of widths) {
+      scene.ownSlot.width = width
+      scene.place()
+      result.push(budget(scene))
+    }
+    return result
+  }
+
+  function test_centerEnd() {
+    // From the box's right edge to the right section, less what follows it.
+    for (var index of [0, 1]) {
+      var scene = centerFixture("centerEnd", index)
+      compare(Geometry.hostSlot(scene.widget), scene.ownSlot)
+      compare(budgets(scene, [0, 300, 31, 447, 600]), [447, 447, 447, 447, 447])
+    }
+    scene.rightSlot.width = 400
+    compare(budgets(scene, [0, 247]), [247, 247])
+  }
+
+  function test_centerBegin() {
+    // From the box's left edge to the left section, less what precedes it.
+    for (var index of [0, 1]) {
+      var scene = centerFixture("centerBegin", index)
+      compare(budgets(scene, [0, 300, 31, 347, 600]), [347, 347, 347, 347, 347])
+    }
+    scene.leftSlot.width = 400
+    compare(budgets(scene, [0, 247]), [247, 247])
+  }
+
+  function test_centerBox() {
+    // The box grows both ways, so it gets twice the room on its tighter side,
+    // less the clock it shares the box with and the host's rounding.
+    var scene = centerFixture("center", 1)
+    compare(budgets(scene, [0, 300, 31, 693, 694, 900]), [693, 693, 693, 693, 693, 693])
+    scene.leftSlot.width = 500
+    compare(budgets(scene, [0, 293, 31]), [293, 293, 293])
+    scene.endSlot.width = 300
+    scene.leftSlot.width = 300
+    compare(budgets(scene, [0, 413, 64]), [413, 413, 413])
+  }
+
+  function test_centerSectionsBesideNotch() {
+    // All four sections grow toward the start of the bar as one, up to the
+    // left section, with the center sections' gap before the right one.
+    for (var region of ["centerBegin", "center", "centerEnd"]) {
+      var scene = centerFixture(region, 0)
+      scene.sections.besideRight = true
+      compare(budgets(scene, [0, 400, 31, 794, 900]), [794, 794, 794, 794, 794])
+    }
+  }
+
+  function test_centerSectionsElsewhere() {
+    // Hosts without Omarchy 4.5's center sections keep the full layout there.
     var scene = fixture()
-    // Omarchy 4.5 places widgets beside the clock in centerBegin and centerEnd.
     for (var region of ["centerBegin", "center", "centerEnd"]) {
       scene.ownSlot.region = region
       compare(Geometry.hostSlot(scene.widget), scene.ownSlot)
       compare(budget(scene), 100000)
     }
+  }
+
+  function test_traySection() {
+    // The tray's drawer shows its widgets only while it is open.
+    var scene = fixture()
+    scene.ownSlot.region = "tray"
+    compare(Geometry.hostSlot(scene.widget), scene.ownSlot)
+    compare(budget(scene), 100000)
   }
 
   function test_centerSectionsAreObstacles() {
@@ -187,8 +327,13 @@ TestCase {
     scene.width = 0
     compare(budget(scene), 0)
     scene.width = 1600
+    // Outside any slot this file knows, the widget keeps its full layout
+    // rather than hiding where nothing would bring it back (#25).
     scene.widget.parent = testCase
-    compare(budget(scene), 0)
+    compare(budget(scene), 100000)
+    scene.widget.parent = scene.ownSlot
+    scene.ownSlot.region = "middle"
+    compare(budget(scene), 100000)
   }
 
   function test_fractionalGeometry() {
