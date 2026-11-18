@@ -5,6 +5,7 @@ import QtQuick.Effects
 import Quickshell
 import Quickshell.Io
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 
 ShellRoot {
@@ -49,10 +50,10 @@ ShellRoot {
   component Api: PluginBarApi {
     pluginId: "crmne.mpris"
     moduleName: "crmne.mpris"
-    foreground: Color.bar.text
-    barForeground: Color.bar.text
-    background: Color.bar.background
-    urgent: Color.bar.active
+    foreground: Commons.Color.bar.text
+    barForeground: Commons.Color.bar.text
+    background: Commons.Color.bar.background
+    urgent: Commons.Color.bar.active
     fontFamily: Style.font.family
     barSize: Style.bar.sizeHorizontal
     foregroundAnimationEnabled: false
@@ -85,7 +86,7 @@ ShellRoot {
         anchors.verticalCenter: parent.verticalCenter
         text: modelData.text
         opacity: modelData.dim ? 0.45 : 1
-        color: Color.bar.text
+        color: Commons.Color.bar.text
         font.family: Style.font.family
         font.pixelSize: Style.font.body
       }
@@ -101,7 +102,7 @@ ShellRoot {
     readonly property Api api: Api { shell: FakeShell { service: strip.service } }
     height: Style.bar.sizeHorizontal
 
-    Rectangle { anchors.fill: parent; color: Color.bar.background }
+    Rectangle { anchors.fill: parent; color: Commons.Color.bar.background }
 
     Slot {
       region: "left"

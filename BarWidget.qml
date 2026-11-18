@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "BarGeometry.js" as BarGeometry
 import "TextLimit.js" as TextLimit
@@ -250,7 +251,7 @@ BarWidget {
       Rectangle {
         anchors.fill: parent
         radius: Style.space(3)
-        color: root.bar ? Style.normalFillFor(root.bar.barForeground, Color.accent) : "transparent"
+        color: root.bar ? Style.normalFillFor(root.bar.barForeground, Commons.Color.accent) : "transparent"
       }
 
       Image {
@@ -270,7 +271,7 @@ BarWidget {
         anchors.centerIn: parent
         visible: root.artSource === "" || cover.status === Image.Error
         text: "󰝚"
-        color: root.bar ? root.bar.barForeground : Color.foreground
+        color: root.bar ? root.bar.barForeground : Commons.Color.foreground
         font.family: root.bar ? root.bar.fontFamily : Style.font.family
         font.pixelSize: Style.font.body
       }
@@ -306,7 +307,7 @@ BarWidget {
         anchors.verticalCenter: parent.verticalCenter
         text: root.displayText
         textFormat: Text.PlainText
-        color: root.bar ? root.bar.barForeground : Color.foreground
+        color: root.bar ? root.bar.barForeground : Commons.Color.foreground
         opacity: root.activePlayer && root.activePlayer.isPlaying ? 0.92 : 0.58
         font.family: root.bar ? root.bar.fontFamily : Style.font.family
         font.pixelSize: Style.font.body
@@ -357,7 +358,7 @@ BarWidget {
 
         Text {
           text: "NOW PLAYING"
-          color: root.bar ? root.bar.foreground : Color.foreground
+          color: root.bar ? root.bar.foreground : Commons.Color.foreground
           font.family: root.bar ? root.bar.fontFamily : Style.font.family
           font.pixelSize: Style.font.subtitle
           font.bold: true
@@ -367,14 +368,14 @@ BarWidget {
           width: parent.width
           text: root.fullDisplayText || "No track metadata"
           textFormat: Text.PlainText
-          color: root.bar ? Qt.darker(root.bar.foreground, 1.45) : Color.foreground
+          color: root.bar ? Qt.darker(root.bar.foreground, 1.45) : Commons.Color.foreground
           font.family: root.bar ? root.bar.fontFamily : Style.font.family
           font.pixelSize: Style.font.caption
           elide: Text.ElideRight
         }
 
         PanelSeparator {
-          foreground: root.bar ? root.bar.foreground : Color.foreground
+          foreground: root.bar ? root.bar.foreground : Commons.Color.foreground
         }
 
         SettingSlider {
@@ -415,8 +416,8 @@ BarWidget {
           label: "Adapt to available space"
           description: "Shrink this widget before bar sections overlap."
           checked: root.adaptiveLayout
-          foreground: root.bar ? root.bar.foreground : Color.foreground
-          accent: Color.accent
+          foreground: root.bar ? root.bar.foreground : Commons.Color.foreground
+          accent: Commons.Color.accent
           fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
           onClicked: root.saveSetting("adaptiveLayout", !root.adaptiveLayout)
         }
@@ -426,8 +427,8 @@ BarWidget {
           label: "Show transport controls"
           description: "Previous, play/pause, and next buttons."
           checked: root.showControls
-          foreground: root.bar ? root.bar.foreground : Color.foreground
-          accent: Color.accent
+          foreground: root.bar ? root.bar.foreground : Commons.Color.foreground
+          accent: Commons.Color.accent
           fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
           onClicked: root.saveSetting("showControls", !root.showControls)
         }
@@ -437,8 +438,8 @@ BarWidget {
           label: "Show seek buttons"
           description: "Back and forward " + Transport.SEEK_STEP + " seconds, with the transport controls."
           checked: root.showSeekControls
-          foreground: root.bar ? root.bar.foreground : Color.foreground
-          accent: Color.accent
+          foreground: root.bar ? root.bar.foreground : Commons.Color.foreground
+          accent: Commons.Color.accent
           fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
           onClicked: root.saveSetting("showSeekControls", !root.showSeekControls)
         }
@@ -448,8 +449,8 @@ BarWidget {
           label: "Show album art"
           description: "Keep artwork beside the track label when space allows."
           checked: root.showAlbumArt
-          foreground: root.bar ? root.bar.foreground : Color.foreground
-          accent: Color.accent
+          foreground: root.bar ? root.bar.foreground : Commons.Color.foreground
+          accent: Commons.Color.accent
           fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
           onClicked: root.saveSetting("showAlbumArt", !root.showAlbumArt)
         }
@@ -459,8 +460,8 @@ BarWidget {
           label: "Show artist"
           description: "Place the artist before the track title."
           checked: root.showArtist
-          foreground: root.bar ? root.bar.foreground : Color.foreground
-          accent: Color.accent
+          foreground: root.bar ? root.bar.foreground : Commons.Color.foreground
+          accent: Commons.Color.accent
           fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
           onClicked: root.saveSetting("showArtist", !root.showArtist)
         }
@@ -485,14 +486,14 @@ BarWidget {
       anchors.fill: parent
       radius: Style.space(4)
       color: mouse.containsMouse && button.enabled
-        ? Style.hoverFillFor(root.bar ? root.bar.barForeground : Color.foreground, Color.accent)
+        ? Style.hoverFillFor(root.bar ? root.bar.barForeground : Commons.Color.foreground, Commons.Color.accent)
         : "transparent"
     }
 
     Text {
       anchors.centerIn: parent
       text: button.iconText
-      color: root.bar ? root.bar.barForeground : Color.foreground
+      color: root.bar ? root.bar.barForeground : Commons.Color.foreground
       font.family: root.bar ? root.bar.fontFamily : Style.font.family
       font.pixelSize: Style.font.body
     }
@@ -538,7 +539,7 @@ BarWidget {
         id: settingLabel
         anchors.left: parent.left
         text: sliderSetting.label
-        color: root.bar ? root.bar.foreground : Color.foreground
+        color: root.bar ? root.bar.foreground : Commons.Color.foreground
         font.family: root.bar ? root.bar.fontFamily : Style.font.family
         font.pixelSize: Style.font.body
       }
@@ -547,7 +548,7 @@ BarWidget {
         id: settingValue
         anchors.right: parent.right
         text: Math.round(slider.dragging ? slider.liveValue : sliderSetting.currentValue) + sliderSetting.suffix
-        color: root.bar ? Qt.darker(root.bar.foreground, 1.35) : Color.foreground
+        color: root.bar ? Qt.darker(root.bar.foreground, 1.35) : Commons.Color.foreground
         font.family: root.bar ? root.bar.fontFamily : Style.font.family
         font.pixelSize: Style.font.caption
       }

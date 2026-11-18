@@ -134,8 +134,8 @@ OpenGL and refuses a software-rendered capture.
 ## Validation
 
 Run the geometry, service-lookup, label-truncation, seek, and artwork
-regression tests with Qt Quick Test, and the artwork helper's tests with
-Python:
+regression tests with Qt Quick Test, and the artwork helper's and QML color
+checks with Python:
 
 ```bash
 QT_QPA_PLATFORM=offscreen /usr/lib/qt6/bin/qmltestrunner -input tests
