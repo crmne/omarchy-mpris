@@ -67,7 +67,7 @@ def prepare(work):
     for name in ["Commons", "Ui"]:
         shutil.copytree(Path("/usr/share/omarchy/shell") / name, shell / name)
     # Production widget files; the MPRIS service is swapped for the fixture.
-    for name in ["BarWidget.qml", "BarGeometry.js", "ServiceSource.qml", "TextLimit.js"]:
+    for name in ["BarWidget.qml", "BarGeometry.js", "ServiceSource.qml", "TextLimit.js", "Transport.js"]:
         shutil.copy(ROOT / name, plugin / name)
     shutil.copy(TOOLS / "FakeService.qml", plugin / "Service.qml")
     shutil.copy(TOOLS / "FakeService.qml", shell / "FakeService.qml")

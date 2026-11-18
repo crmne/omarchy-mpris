@@ -28,6 +28,7 @@
       "maxLabelWidth": 300,
       "showAlbumArt": true,
       "showControls": true,
+      "showSeekControls": false,
       "showArtist": true
     },
     "schema": [
@@ -74,6 +75,13 @@
         "label": "Show transport controls",
         "description": "Show previous, play/pause, and next buttons when space allows.",
         "defaultValue": true
+      },
+      {
+        "key": "showSeekControls",
+        "type": "boolean",
+        "label": "Show seek buttons",
+        "description": "Show back and forward 10 second buttons with the transport controls when space allows.",
+        "defaultValue": false
       },
       {
         "key": "showAlbumArt",

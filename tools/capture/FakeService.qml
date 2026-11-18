@@ -21,10 +21,12 @@ QtObject {
     readonly property bool canPlay: true
     readonly property bool canPause: true
     readonly property bool canTogglePlaying: true
+    readonly property bool canSeek: true
   }
 
   function previous() { return false }
   function next() { return false }
   function playPause() { return false }
+  function seekBy(seconds) { return false }
   function raisePlayer() { return false }
 }
