@@ -267,13 +267,16 @@ BarWidget {
         smooth: true
       }
 
-      Text {
-        anchors.centerIn: parent
+      // Centered by its ink at the bar's icon size, as Omarchy's own bar
+      // icons are, inside the smallest artwork too.
+      OpticalGlyph {
+        anchors.fill: parent
         visible: root.artSource === "" || cover.status === Image.Error
         text: "󰝚"
         color: root.bar ? root.bar.barForeground : Commons.Color.foreground
-        font.family: root.bar ? root.bar.fontFamily : Style.font.family
-        font.pixelSize: Style.font.body
+        fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
+        fontSize: Style.bar.iconFont
+        paintedSize: Math.min(Style.bar.iconSize, root.artSize - Style.space(4))
       }
 
       MouseArea {
@@ -490,12 +493,16 @@ BarWidget {
         : "transparent"
     }
 
-    Text {
-      anchors.centerIn: parent
+    // A Text centered in the button centers its line box, and each glyph
+    // sits differently in it. Center the painted glyph at the bar's icon
+    // size instead, as BarIconButton does.
+    OpticalGlyph {
+      anchors.fill: parent
       text: button.iconText
       color: root.bar ? root.bar.barForeground : Commons.Color.foreground
-      font.family: root.bar ? root.bar.fontFamily : Style.font.family
-      font.pixelSize: Style.font.body
+      fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
+      fontSize: Style.bar.iconFont
+      paintedSize: Style.bar.iconSize
     }
 
     MouseArea {
