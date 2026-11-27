@@ -1,8 +1,9 @@
 // Album art goes through bin/artwork before Qt sees it. Given an http(s) URL,
 // Qt's Image buffers the whole response before decoding it, so a cover server
 // answering with gigabytes would exhaust the shell's memory. The helper
-// downloads with a hard byte limit into a private cache and prints a local
-// file instead; covers already on disk are only size-checked.
+// downloads with a hard byte limit, and for every cover, downloaded or on
+// disk, accepts only a PNG or JPEG of bounded dimensions, rewritten without
+// its metadata into a private cache. It prints that local file instead.
 //
 // Kept free of QML types so the rules can be tested on their own.
 

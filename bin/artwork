@@ -16,8 +16,14 @@ set, is echoed back so the shell can tell this run's answer from a stale one.
     {"ok": true, "request": "7", "source": "file:///home/me/.cache/.../<sha256>"}
     {"ok": false, "request": "7", "code": "too_large", "error": "..."}
 
-Covers the player keeps on disk (file://) are not copied: they are checked to
-be regular files within the same limit, and printed back unchanged.
+Size alone does not make a cover safe to decode. Qt decodes it inside the
+shell, and a few kilobytes of PNG can declare a picture of a billion pixels,
+or carry compressed text and colour-profile chunks that inflate to gigabytes.
+So every cover, downloaded or already on disk, is checked and rewritten before
+the shell sees it: only PNG and JPEG are accepted, no larger than
+MAX_IMAGE_SIDE pixels a side, with every PNG chunk and JPEG segment that is
+not needed to draw the picture dropped. Anything else is refused, not passed
+through.
 """
 
 import argparse
@@ -28,12 +34,14 @@ import os
 import re
 import signal
 import stat
+import struct
 import sys
 import tempfile
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import zlib
 
 VERSION = "1.0.0"
 UA = "omarchy-artwork/%s" % VERSION
@@ -56,6 +64,16 @@ MAX_REDIRECTS = 5
 DEADLINE_SECONDS = 20
 SOCKET_TIMEOUT_SECONDS = 10
 CHUNK_BYTES = 64 * 1024
+# The panel shows covers at 128 pixels. Apple Music's 3000x3000 covers fit;
+# at this size the largest PNG Qt could be handed decodes to 72 MiB (16-bit
+# RGBA), and a typical one to under 40.
+MAX_IMAGE_SIDE = 3072
+# Progressive JPEGs have about ten scans. Each one is another pass over the
+# whole picture, so a cover made of thousands of them is refused.
+MAX_JPEG_SCANS = 64
+# Bumped whenever what is written to the cache changes, so covers an older
+# version wrote are never handed out again; prune() clears them in time.
+CACHE_FORMAT = "2"
 ENTRY_NAME = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -69,6 +87,10 @@ class TooLarge(Exception):
 
 class TooSlow(Exception):
     """The download did not finish before the deadline."""
+
+
+class BadImage(Exception):
+    """Not a PNG or JPEG this helper can vouch for."""
 
 
 def give_up(signum, frame):
@@ -142,12 +164,8 @@ def cached_entry(path):
             and time.time() - info.st_mtime < CACHE_TTL_SECONDS)
 
 
-def download(url, path, allow_http):
-    """Stream the cover into `path`, refusing it once it passes the limit.
-
-    The body goes through a private temporary file and an atomic rename, so
-    Qt never sees a partial cover and nothing outside the limit is kept.
-    """
+def download(url, allow_http):
+    """The cover's bytes, refused as soon as they pass the limit."""
     request = urllib.request.Request(check_remote(url, allow_http), headers={
         "User-Agent": UA, "Accept": "image/*", "Accept-Encoding": "identity"})
     with opener(allow_http).open(request, timeout=SOCKET_TIMEOUT_SECONDS) as response:
@@ -157,27 +175,212 @@ def download(url, path, allow_http):
         encoding = (response.headers.get("Content-Encoding") or "").strip().lower()
         if encoding not in ("", "identity"):
             raise Blocked("the artwork server sent a %s-encoded response" % encoding)
-        fd, temporary = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".part-")
-        try:
-            total = 0
-            with os.fdopen(fd, "wb") as handle:
-                while True:
-                    chunk = response.read(min(CHUNK_BYTES, MAX_ARTWORK_BYTES + 1 - total))
-                    if not chunk:
-                        break
-                    total += len(chunk)
-                    if total > MAX_ARTWORK_BYTES:
-                        raise TooLarge("the artwork is larger than %d bytes" % MAX_ARTWORK_BYTES)
-                    handle.write(chunk)
-            if total == 0:
-                raise ValueError("the artwork server sent an empty response")
-            os.replace(temporary, path)
-        except BaseException:
+        body = bytearray()
+        while True:
+            chunk = response.read(min(CHUNK_BYTES, MAX_ARTWORK_BYTES + 1 - len(body)))
+            if not chunk:
+                break
+            body += chunk
+            if len(body) > MAX_ARTWORK_BYTES:
+                raise TooLarge("the artwork is larger than %d bytes" % MAX_ARTWORK_BYTES)
+        if not body:
+            raise ValueError("the artwork server sent an empty response")
+        return bytes(body)
+
+
+def store(data, path):
+    """Write a cleaned cover to `path` through a private temporary file and an
+    atomic rename, so Qt never sees a partial one."""
+    fd, temporary = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".part-")
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
+        os.replace(temporary, path)
+    except BaseException:
+        remove(temporary)
+        raise
+
+
+def check_size(width, height):
+    if not (0 < width <= MAX_IMAGE_SIDE and 0 < height <= MAX_IMAGE_SIDE):
+        raise BadImage("the artwork is %dx%d, larger than %d pixels a side"
+                       % (width, height, MAX_IMAGE_SIDE))
+
+
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+# The chunks that decide what the picture looks like. Everything else is
+# dropped: text (tEXt, zTXt, iTXt), colour profiles (iCCP), animation, and
+# whatever else a server cares to add.
+PNG_KEPT = (b"IHDR", b"PLTE", b"tRNS", b"IDAT", b"IEND")
+# Bit depths allowed for each colour type, and how many samples a pixel has.
+PNG_DEPTHS = {0: (1, 2, 4, 8, 16), 2: (8, 16), 3: (1, 2, 4, 8), 4: (8, 16), 6: (8, 16)}
+PNG_SAMPLES = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}
+# Adam7 passes: first column, first row, column step, row step.
+ADAM7 = ((0, 0, 8, 8), (4, 0, 8, 8), (0, 4, 4, 8), (2, 0, 4, 4),
+         (0, 2, 2, 4), (1, 0, 2, 2), (0, 1, 1, 2))
+
+
+def png_data_size(width, height, bits, interlaced):
+    """How many bytes the picture's pixel data inflates to: each row is a
+    filter byte and its packed samples."""
+    def rows(w, h):
+        return h * (1 + (w * bits + 7) // 8) if w and h else 0
+    if not interlaced:
+        return rows(width, height)
+    return sum(rows((width - x + dx - 1) // dx if width > x else 0,
+                    (height - y + dy - 1) // dy if height > y else 0)
+               for x, y, dx, dy in ADAM7)
+
+
+def clean_png(data):
+    """The PNG with only the chunks needed to draw it, after checking its size
+    and that its pixel data inflates to exactly what that size needs."""
+    out = [PNG_SIGNATURE]
+    position = len(PNG_SIGNATURE)
+    expected = None
+    inflated = 0
+    inflater = zlib.decompressobj()
+    while True:
+        if position + 12 > len(data):
+            raise BadImage("the PNG artwork is cut short")
+        length, kind = struct.unpack(">I4s", data[position:position + 8])
+        end = position + 12 + length
+        if length > 0x7FFFFFFF or end > len(data) or not kind.isalpha():
+            raise BadImage("the PNG artwork is damaged")
+        body = data[position + 8:end - 4]
+        if zlib.crc32(kind + body) != struct.unpack(">I", data[end - 4:end])[0]:
+            raise BadImage("the PNG artwork is damaged")
+        chunk = data[position:end]
+        position = end
+        if expected is None:
+            if kind != b"IHDR" or length != 13:
+                raise BadImage("the PNG artwork has no header")
+            width, height, depth, colour, method, filtering, interlace = \
+                struct.unpack(">IIBBBBB", body)
+            check_size(width, height)
+            if (depth not in PNG_DEPTHS.get(colour, ()) or method or filtering
+                    or interlace not in (0, 1)):
+                raise BadImage("the PNG artwork has a header no decoder accepts")
+            expected = png_data_size(width, height, depth * PNG_SAMPLES[colour], interlace)
+        elif kind == b"IHDR":
+            raise BadImage("the PNG artwork has two headers")
+        elif kind == b"IDAT":
             try:
-                os.unlink(temporary)
-            except OSError:
-                pass
-            raise
+                while body:
+                    produced = inflater.decompress(
+                        body, min(1 << 20, expected + 1 - inflated))
+                    inflated += len(produced)
+                    if inflated > expected:
+                        raise BadImage("the PNG artwork has more pixels than it declares")
+                    body = inflater.unconsumed_tail
+            except zlib.error:
+                raise BadImage("the PNG artwork is damaged")
+        elif kind not in PNG_KEPT:
+            # A lowercase first letter marks a chunk a decoder may skip; an
+            # unknown one it may not skip is a picture this helper cannot vouch for.
+            if kind[0] & 0x20 == 0:
+                raise BadImage("the PNG artwork needs a chunk this helper does not know")
+            continue
+        out.append(chunk)
+        if kind == b"IEND":
+            break
+    if inflated != expected:
+        raise BadImage("the PNG artwork has fewer pixels than it declares")
+    return b"".join(out)
+
+
+# Frame headers for baseline, extended and progressive Huffman JPEGs, the
+# kinds cameras and encoders write. Lossless, hierarchical and arithmetic
+# coded JPEGs are refused.
+JPEG_FRAMES = (0xC0, 0xC1, 0xC2)
+# Tables and restart intervals the decoder needs, plus JFIF (APP0) and Adobe
+# (APP14), which say how to read the colours. Other APPn segments (EXIF, ICC
+# profiles, XMP) and comments are dropped.
+JPEG_KEPT = (0xC4, 0xDB, 0xDD, 0xE0, 0xEE)
+
+
+def clean_jpeg(data):
+    """The JPEG with only the segments needed to draw it, after checking its
+    size and how many scans it takes to decode."""
+    if not data.startswith(b"\xff\xd8"):
+        raise BadImage("the JPEG artwork has no start")
+    out = [b"\xff\xd8"]
+    position = 2
+    framed = False
+    scans = 0
+    while True:
+        if position >= len(data) or data[position] != 0xFF:
+            raise BadImage("the JPEG artwork is damaged")
+        while position < len(data) and data[position] == 0xFF:
+            position += 1
+        if position >= len(data):
+            raise BadImage("the JPEG artwork is cut short")
+        marker = data[position]
+        position += 1
+        if marker == 0xD9:
+            break
+        if position + 2 > len(data):
+            raise BadImage("the JPEG artwork is cut short")
+        length = struct.unpack(">H", data[position:position + 2])[0]
+        if length < 2 or position + length > len(data):
+            raise BadImage("the JPEG artwork is damaged")
+        body = data[position + 2:position + length]
+        segment = bytes((0xFF, marker)) + data[position:position + length]
+        position += length
+        if marker in JPEG_FRAMES:
+            if framed or len(body) < 6:
+                raise BadImage("the JPEG artwork has a damaged frame")
+            height, width, components = struct.unpack(">HHB", body[1:6])
+            # A height of 0 is only given later, in a DNL marker.
+            check_size(width, height)
+            if components not in (1, 3, 4) or len(body) != 6 + 3 * components:
+                raise BadImage("the JPEG artwork has a damaged frame")
+            framed = True
+        elif marker == 0xDA:
+            scans += 1
+            if not framed or scans > MAX_JPEG_SCANS:
+                raise BadImage("the JPEG artwork takes too many scans to decode")
+            # The coded data runs to the next marker that is not a restart or
+            # a stuffed zero byte.
+            start = position
+            while True:
+                found = data.find(b"\xff", position)
+                if found < 0 or found + 1 >= len(data):
+                    raise BadImage("the JPEG artwork is cut short")
+                following = data[found + 1]
+                if following == 0x00 or 0xD0 <= following <= 0xD7:
+                    position = found + 2
+                elif following == 0xFF:
+                    position = found + 1
+                else:
+                    break
+            out.append(segment)
+            out.append(data[start:found])
+            position = found
+            continue
+        elif marker not in JPEG_KEPT:
+            if 0xE1 <= marker <= 0xEF or marker == 0xFE:
+                continue
+            raise BadImage("the JPEG artwork is a kind this helper does not decode")
+        out.append(segment)
+    if not scans:
+        raise BadImage("the JPEG artwork has no picture in it")
+    out.append(b"\xff\xd9")
+    return b"".join(out)
+
+
+def clean(data):
+    """The cover rewritten so Qt can decode it within bounded memory, or
+    BadImage. Whatever is not a PNG or JPEG is refused."""
+    if data.startswith(PNG_SIGNATURE):
+        return clean_png(data)
+    if data.startswith(b"\xff\xd8\xff"):
+        return clean_jpeg(data)
+    raise BadImage("the artwork is not a PNG or JPEG")
+
+
+def entry_name(kind, key):
+    return hashlib.sha256(("%s:%s:" % (CACHE_FORMAT, kind)).encode() + key).hexdigest()
 
 
 def prune(directory, keep):
@@ -213,24 +416,31 @@ def remove(path):
         pass
 
 
-def remote(url, allow_http):
-    check_remote(url, allow_http)
+def private_cache():
     directory = cache_dir()
     if not directory:
         raise Blocked("the artwork cache directory is not private")
-    name = hashlib.sha256(url.encode("utf-8")).hexdigest()
+    return directory
+
+
+def remote(url, allow_http):
+    check_remote(url, allow_http)
+    directory = private_cache()
+    name = entry_name("url", url.encode("utf-8"))
     path = os.path.join(directory, name)
     if not cached_entry(path):
-        download(url, path, allow_http)
+        store(clean(download(url, allow_http)), path)
         prune(directory, name)
     return file_url(path)
 
 
 def local(url):
-    """A cover on disk, printed back unchanged if Qt may safely read it.
+    """A cover on disk, cleaned into the cache like a downloaded one.
 
-    Opened without blocking, so a FIFO cannot stall the helper, and judged
-    from that descriptor: only a regular file within the limit passes.
+    A player's cover file is often one a browser saved from a web page, so it
+    is no more trusted than a download. Opened without blocking, so a FIFO
+    cannot stall the helper, and judged from that descriptor: only a regular
+    file within the limit is read.
     """
     parts = urllib.parse.urlsplit(url)
     if parts.netloc not in ("", "localhost") or parts.query or parts.fragment:
@@ -244,13 +454,25 @@ def local(url):
         raise Blocked("cannot read the artwork: %s" % (exc.strerror or errno.errorcode.get(exc.errno, "")))
     try:
         info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode):
+            raise Blocked("the artwork is not a regular file")
+        if info.st_size > MAX_ARTWORK_BYTES:
+            raise TooLarge("the artwork is larger than %d bytes" % MAX_ARTWORK_BYTES)
+        with os.fdopen(os.dup(fd), "rb") as handle:
+            data = handle.read(MAX_ARTWORK_BYTES + 1)
     finally:
         os.close(fd)
-    if not stat.S_ISREG(info.st_mode):
-        raise Blocked("the artwork is not a regular file")
-    if info.st_size > MAX_ARTWORK_BYTES:
+    if len(data) > MAX_ARTWORK_BYTES:
         raise TooLarge("the artwork is larger than %d bytes" % MAX_ARTWORK_BYTES)
-    return url
+    directory = private_cache()
+    # Named by content, so a cover replaced in place is never mistaken for
+    # the one before it.
+    name = entry_name("file", data)
+    path = os.path.join(directory, name)
+    if not cached_entry(path):
+        store(clean(data), path)
+        prune(directory, name)
+    return file_url(path)
 
 
 def resolve(url, allow_http):
@@ -279,6 +501,8 @@ def main(argv=None):
         payload = {"ok": False, "code": "blocked", "error": str(exc)}
     except TooLarge as exc:
         payload = {"ok": False, "code": "too_large", "error": str(exc)}
+    except BadImage as exc:
+        payload = {"ok": False, "code": "image", "error": str(exc)}
     except urllib.error.HTTPError as exc:
         exc.close()
         payload = {"ok": False, "code": "http", "error": "the artwork server returned HTTP %d" % exc.code}

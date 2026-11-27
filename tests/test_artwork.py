@@ -5,10 +5,14 @@ Run with: python3 -m unittest discover -s tests
 Qt's Image buffers an http(s) response whole before decoding it, so the
 helper is what keeps a cover server from exhausting the shell's memory. These
 serve covers from a throwaway server on loopback and check that oversized,
-endless, slow, and redirected answers never reach the cache, and that covers
-on disk are size-checked rather than copied.
+endless, slow, and redirected answers never reach the cache. Size alone does
+not bound what Qt spends decoding a cover, so these also check that every
+cover, downloaded or on disk, reaches the shell only as a PNG or JPEG of
+bounded dimensions with nothing in it but what draws the picture.
 """
 
+import base64
+import hashlib
 import http.client
 import http.server
 import importlib.machinery
@@ -17,11 +21,13 @@ import io
 import json
 import os
 import stat
+import struct
 import tempfile
 import threading
 import time
 import unittest
 import urllib.parse
+import zlib
 from contextlib import redirect_stdout
 from unittest import mock
 
@@ -30,8 +36,65 @@ spec = importlib.util.spec_from_loader("artwork", importlib.machinery.SourceFile
 helper = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(helper)
 
-COVER = b"\x89PNG\r\n\x1a\n" + b"\x00" * 200
 LIMIT = 4096
+
+
+def chunk(kind, body):
+    return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body))
+
+
+def png(width=2, height=2, extra=(), pixels=None, after=b""):
+    """An 8-bit RGB PNG, with `extra` chunks between its header and pixels."""
+    if pixels is None:
+        pixels = (b"\x00" + b"\x7f" * (3 * width)) * height
+    return (b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+            + b"".join(extra) + chunk(b"IDAT", zlib.compress(pixels))
+            + chunk(b"IEND", b"") + after)
+
+
+# A megabyte of text that compresses to about a kilobyte: what a decoder that
+# reads metadata would inflate, many times over in a real attack.
+BOMB = zlib.compress(b"\x00" * (1 << 20), 9)
+TRANSPARENCY = chunk(b"tRNS", b"\x00\x00\x00\x00\x00\x00")
+METADATA = (chunk(b"tEXt", b"Comment\x00hello"),
+            chunk(b"zTXt", b"Comment\x00\x00" + BOMB),
+            chunk(b"iTXt", b"XML:com.adobe.xmp\x00\x01\x00\x00\x00" + BOMB),
+            chunk(b"iCCP", b"icc\x00\x00" + BOMB))
+COVER = png()
+# The same picture, carrying compressed metadata a decoder would inflate.
+LOADED_COVER = png(extra=METADATA)
+# A few dozen bytes that declare ten billion pixels.
+HUGE_COVER = png(width=100000, height=100000, pixels=b"")
+
+# Written by ImageMagick with -strip: a 4x4 baseline JPEG and a progressive
+# one, and a 5x3 16-bit interlaced PNG.
+JPEG = base64.b64decode(
+    "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgMCAgMDAwMEAwMEBQgFBQQEBQoHBwYIDAoMDAsKCwsNDhIQDQ4RDgsLEBYQERMUFRUVDA8XGBYU"
+    "GBIUFRT/2wBDAQMEBAUEBQkFBQkUDQsNFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBT/wAARCAAEAAQD"
+    "AREAAhEBAxEB/8QAFAABAAAAAAAAAAAAAAAAAAAAB//EABQQAQAAAAAAAAAAAAAAAAAAAAD/xAAVAQEBAAAAAAAAAAAAAAAAAAAHCP/EABQRAQAA"
+    "AAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/ACwdLLf/2Q==")
+PROGRESSIVE_JPEG = base64.b64decode(
+    "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgMCAgMDAwMEAwMEBQgFBQQEBQoHBwYIDAoMDAsKCwsNDhIQDQ4RDgsLEBYQERMUFRUVDA8XGBYU"
+    "GBIUFRT/2wBDAQMEBAUEBQkFBQkUDQsNFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBT/wgARCAAEAAQD"
+    "AREAAhEBAxEB/8QAFAABAAAAAAAAAAAAAAAAAAAABf/EABQBAQAAAAAAAAAAAAAAAAAAAAf/2gAMAwEAAhADEAAAAUTsp//EABQQAQAAAAAAAAAA"
+    "AAAAAAAAAAD/2gAIAQEAAQUCf//EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQMBAT8Bf//EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQIBAT8B"
+    "f//EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEABj8Cf//EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAT8hf//aAAwDAQACAAMAAAAQv//E"
+    "ABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQMBAT8Qf//EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQIBAT8Qf//EABQQAQAAAAAAAAAAAAAAAAAA"
+    "AAD/2gAIAQEAAT8Qf//Z")
+INTERLACED_PNG = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAUAAAADEAIAAAHzw756AAAAJElEQVQI12P4/5+BgYGBAYViRBKBAkZkLoo8YwMDA0MDAy4AAHYCDPms+7ciAAAA"
+    "AElFTkSuQmCC")
+
+
+def segment(marker, body):
+    return bytes((0xFF, marker)) + struct.pack(">H", len(body) + 2) + body
+
+
+def after_app0(jpeg, *segments):
+    """`jpeg` with `segments` inserted after its JFIF header."""
+    split = 4 + struct.unpack(">H", jpeg[4:6])[0]
+    return jpeg[:split] + b"".join(segments) + jpeg[split:]
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -45,6 +108,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         route = self.path.split("?")[0]
         if route == "/cover.png":
             self.answer(COVER)
+        elif route == "/loaded.png":
+            self.answer(LOADED_COVER)
+        elif route == "/huge.png":
+            self.answer(HUGE_COVER)
         elif route == "/declared-huge":
             self.send_response(200)
             self.send_header("Content-Length", str(LIMIT + 1))
@@ -137,6 +204,88 @@ class ArtworkCase(unittest.TestCase):
         return code, json.loads(out.getvalue()), leaked
 
 
+class CleanArtwork(unittest.TestCase):
+    """What Qt decodes in the shell's own process: never more than a bounded
+    picture, and nothing it would have to inflate to find that out."""
+
+    def test_a_png_keeps_only_the_chunks_that_draw_it(self):
+        loaded = png(extra=METADATA + (TRANSPARENCY,), after=b"trailing junk")
+        self.assertEqual(helper.clean(loaded), png(extra=(TRANSPARENCY,)))
+        self.assertEqual(helper.clean(COVER), COVER)
+
+    def test_interlaced_and_16_bit_pngs_are_kept(self):
+        self.assertEqual(helper.clean(INTERLACED_PNG), INTERLACED_PNG)
+
+    def test_a_png_declaring_a_huge_picture_is_refused(self):
+        side = helper.MAX_IMAGE_SIDE
+        for width, height in ((100000, 100000), (side + 1, 1), (1, side + 1), (0, 1)):
+            row = b"\x00" + b"\x7f" * 3 * width
+            pixels = row * height if width * height < 1 << 16 else b""
+            with self.assertRaises(helper.BadImage, msg=(width, height)):
+                helper.clean(png(width=width, height=height, pixels=pixels))
+
+    def test_a_png_whose_pixels_inflate_past_its_size_is_refused(self):
+        # Two by two pixels need 14 bytes; this inflates to a megabyte.
+        with self.assertRaises(helper.BadImage):
+            helper.clean(png(pixels=b"\x00" * (1 << 20)))
+
+    def test_a_damaged_or_incomplete_png_is_refused(self):
+        damaged = bytearray(COVER)
+        damaged[-20] ^= 0xFF
+        cases = {
+            "damaged": bytes(damaged),
+            "cut short": COVER[:-12],
+            "missing pixels": png(pixels=b"\x00" * 7),
+            "unknown critical chunk": png(extra=(chunk(b"ABCD", b""),)),
+            "second header": png(extra=(COVER[8:33],)),
+            "no header": COVER[:8] + COVER[33:],
+        }
+        for name, data in cases.items():
+            with self.assertRaises(helper.BadImage, msg=name):
+                helper.clean(data)
+
+    def test_a_jpeg_keeps_only_the_segments_that_draw_it(self):
+        loaded = after_app0(JPEG, segment(0xE1, b"Exif\x00\x00" + b"x" * 100),
+                            segment(0xE2, b"ICC_PROFILE\x00\x01\x01" + b"x" * 100),
+                            segment(0xFE, b"a comment"))
+        self.assertEqual(helper.clean(loaded + b"trailing junk"), JPEG)
+        self.assertEqual(helper.clean(PROGRESSIVE_JPEG), PROGRESSIVE_JPEG)
+
+    def test_a_jpeg_declaring_a_huge_picture_is_refused(self):
+        frame = JPEG.index(b"\xff\xc0")
+        for height, width in ((0xFFFF, 0xFFFF), (helper.MAX_IMAGE_SIDE + 1, 4), (0, 4)):
+            data = JPEG[:frame + 5] + struct.pack(">HH", height, width) + JPEG[frame + 9:]
+            with self.assertRaises(helper.BadImage, msg=(height, width)):
+                helper.clean(data)
+
+    def test_a_jpeg_that_takes_too_many_scans_is_refused(self):
+        start = JPEG.index(b"\xff\xda")
+        scan = JPEG[start:-2]
+        many = JPEG[:start] + scan * (helper.MAX_JPEG_SCANS + 1) + b"\xff\xd9"
+        with self.assertRaises(helper.BadImage):
+            helper.clean(many)
+        allowed = JPEG[:start] + scan * helper.MAX_JPEG_SCANS + b"\xff\xd9"
+        self.assertEqual(helper.clean(allowed), allowed)
+
+    def test_a_jpeg_of_a_kind_or_shape_it_does_not_know_is_refused(self):
+        frame = JPEG.index(b"\xff\xc0")
+        cases = {
+            "arithmetic coded": JPEG[:frame + 1] + b"\xc9" + JPEG[frame + 2:],
+            "cut short": JPEG[:-40],
+            "no scan": JPEG[:JPEG.index(b"\xff\xda")] + b"\xff\xd9",
+        }
+        for name, data in cases.items():
+            with self.assertRaises(helper.BadImage, msg=name):
+                helper.clean(data)
+
+    def test_anything_but_png_and_jpeg_is_refused(self):
+        for data in (b"", b"GIF89a\x01\x00\x01\x00", b"RIFF\x00\x00\x00\x00WEBPVP8 ",
+                     b"<svg xmlns='http://www.w3.org/2000/svg'/>", b"BM" + b"\x00" * 60,
+                     b"\x00" * 200):
+            with self.assertRaises(helper.BadImage, msg=data[:8]):
+                helper.clean(data)
+
+
 class RemoteArtwork(ArtworkCase):
     def test_a_cover_is_downloaded_into_a_private_cache(self):
         source = helper.resolve(self.url("/cover.png"), allow_http=True)
@@ -147,6 +296,28 @@ class RemoteArtwork(ArtworkCase):
             self.assertEqual(handle.read(), COVER)
         self.assertEqual(stat.S_IMODE(os.stat(self.cache).st_mode), 0o700)
         self.assertEqual(stat.S_IMODE(os.stat(path).st_mode) & 0o077, 0)
+
+    def test_a_cover_reaches_the_cache_without_its_metadata(self):
+        source = helper.resolve(self.url("/loaded.png"), allow_http=True)
+        with open(urllib.parse.unquote(urllib.parse.urlsplit(source).path), "rb") as handle:
+            self.assertEqual(handle.read(), COVER)
+
+    def test_a_cover_declaring_a_huge_picture_is_refused_and_not_kept(self):
+        with self.assertRaises(helper.BadImage):
+            helper.resolve(self.url("/huge.png"), allow_http=True)
+        self.assertEqual(self.entries(), [])
+
+    def test_a_cover_an_older_version_cached_is_not_handed_out(self):
+        # Before covers were cleaned, an entry was named after the URL alone
+        # and held whatever the server sent.
+        url = self.url("/cover.png")
+        os.makedirs(self.cache, mode=0o700)
+        old = os.path.join(self.cache, hashlib.sha256(url.encode()).hexdigest())
+        with open(old, "wb") as handle:
+            handle.write(HUGE_COVER)
+        source = helper.resolve(url, allow_http=True)
+        self.assertNotEqual(urllib.parse.unquote(urllib.parse.urlsplit(source).path), old)
+        self.assertEqual(Handler.hits, ["/cover.png"])
 
     def test_a_cached_cover_is_not_downloaded_again(self):
         first = helper.resolve(self.url("/cover.png"), allow_http=True)
@@ -249,7 +420,8 @@ class Main(ArtworkCase):
         self.assertEqual(leaked, [])
 
     def test_failures_are_reported_as_json(self):
-        cases = {"/endless": "too_large", "/missing": "http", "/to-ftp": "blocked"}
+        cases = {"/endless": "too_large", "/missing": "http", "/to-ftp": "blocked",
+                 "/huge.png": "image"}
         for path, expected in cases.items():
             code, payload, _ = self.run_main(self.url(path))
             self.assertEqual((code, payload["ok"], payload["code"]), (1, False, expected), path)
@@ -265,17 +437,37 @@ class Main(ArtworkCase):
 
 
 class LocalArtwork(ArtworkCase):
-    def local_file(self, name, size):
+    def local_file(self, name, size=0, data=b""):
         path = os.path.join(self.tmp.name, name)
         with open(path, "wb") as handle:
-            handle.truncate(size)
+            handle.write(data)
+            if size:
+                handle.truncate(size)
         return path
 
-    def test_a_cover_on_disk_is_passed_through_unchanged(self):
-        path = self.local_file("cover art.png", 100)
-        url = "file://" + urllib.parse.quote(path)
-        self.assertEqual(helper.resolve(url, allow_http=False), url)
-        self.assertEqual(self.entries(), [], "local covers are not copied")
+    def test_a_cover_on_disk_is_cleaned_into_the_cache(self):
+        # Players often hand over a file a browser saved from a web page.
+        path = self.local_file("cover art.png", data=LOADED_COVER)
+        source = helper.resolve("file://" + urllib.parse.quote(path), allow_http=False)
+        cached = urllib.parse.unquote(urllib.parse.urlsplit(source).path)
+        self.assertEqual(os.path.dirname(cached), self.cache)
+        with open(cached, "rb") as handle:
+            self.assertEqual(handle.read(), COVER)
+        with open(path, "rb") as handle:
+            self.assertEqual(handle.read(), LOADED_COVER, "the player's file is left alone")
+
+    def test_a_cover_on_disk_that_changes_is_cleaned_again(self):
+        path = self.local_file("cover.jpg", data=JPEG)
+        first = helper.resolve("file://" + path, allow_http=False)
+        self.local_file("cover.jpg", data=PROGRESSIVE_JPEG)
+        second = helper.resolve("file://" + path, allow_http=False)
+        self.assertNotEqual(first, second)
+
+    def test_a_cover_on_disk_declaring_a_huge_picture_is_refused(self):
+        path = self.local_file("huge.png", data=HUGE_COVER)
+        with self.assertRaises(helper.BadImage):
+            helper.resolve("file://" + path, allow_http=False)
+        self.assertEqual(self.entries(), [])
 
     def test_a_cover_on_disk_over_the_limit_is_refused(self):
         path = self.local_file("huge.png", LIMIT + 1)

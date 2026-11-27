@@ -62,10 +62,19 @@ the widget loads the result from a private cache under
 `~/.cache/omarchy/mpris/artwork`. The cache keeps the 64 most recent covers,
 up to 64 MiB in all.
 
-Covers the player keeps on disk (`file://`) are not copied: they are shown
-only if they are regular files within the same 16 MiB limit. The helper
-follows `http` and `https` only, re-checking every redirect, and ignores other
-URL schemes. The cover URL travels in the helper's environment, which only you
+A small file can still cost a lot to decode: a PNG of a few kilobytes can
+declare billions of pixels, or carry compressed text and colour profiles that
+inflate to gigabytes. So the helper hands Qt only a PNG or JPEG no larger than
+3072 pixels a side, rewritten with just what draws the picture: text, colour
+profiles, EXIF, comments and other metadata are dropped, and a PNG whose pixel
+data inflates to more than its size needs is refused. Covers the player keeps
+on disk (`file://`) go through the same check into the same cache once they
+are regular files within 16 MiB, so Qt only ever opens the helper's own copy,
+never the player's path. Anything else, including GIF, WebP and larger
+pictures, shows no cover.
+
+The helper follows `http` and `https` only, re-checking every redirect and
+never reading a redirect's body, and ignores other URL schemes. The cover URL travels in the helper's environment, which only you
 can read, rather than on its command line, which every user on the machine can
 see.
 

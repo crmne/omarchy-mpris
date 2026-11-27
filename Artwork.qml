@@ -3,9 +3,10 @@ import Quickshell.Io
 import "Artwork.js" as Artwork
 
 // The player's album art, as a source Image can load without trusting the
-// server it came from. Remote covers are downloaded by bin/artwork with a hard
-// byte limit and loaded from its private cache; covers on disk are passed
-// through once the helper has checked their size. See Artwork.js.
+// server it came from. bin/artwork downloads remote covers with a hard byte
+// limit, checks every cover (remote or on disk) is a PNG or JPEG of bounded
+// size, rewrites it without the metadata Qt would otherwise decode, and the
+// panel loads the result from its private cache. See Artwork.js.
 Item {
   id: root
 
