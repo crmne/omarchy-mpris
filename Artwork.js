@@ -31,6 +31,16 @@ function allowedUrl(url, allowHttp) {
   return ""
 }
 
+// The bar widgets showing the cover, after `viewer` starts (`showing`) or
+// stops showing it. The service fetches a cover only while this list is not
+// empty, so with Show album art off, or only on vertical bars, the player's
+// cover URL is never requested.
+function withViewer(viewers, viewer, showing) {
+  var list = (viewers || []).filter(function (other) { return other !== viewer })
+  if (showing && viewer) list.push(viewer)
+  return list
+}
+
 // How to run the helper for one URL: a command and an environment.
 //
 // The URL names the track, and a process's arguments are readable by every
@@ -89,6 +99,7 @@ if (typeof module !== "undefined") {
     MAX_URL_CHARS: MAX_URL_CHARS,
     REQUEST_ENV: REQUEST_ENV,
     allowedUrl: allowedUrl,
+    withViewer: withViewer,
     invocation: invocation,
     parseOutput: parseOutput,
     requestOf: requestOf,

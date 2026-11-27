@@ -45,4 +45,20 @@ TestCase {
     compare(Artwork.sourceFromOutput("not json", 4), "")
     compare(Artwork.sourceFromOutput(ok + " ".repeat(Artwork.MAX_OUTPUT_BYTES), 4), "")
   }
+
+  function test_coversAreWantedOnlyWhileAWidgetShowsThem() {
+    var first = { name: "first" }
+    var second = { name: "second" }
+    var viewers = Artwork.withViewer([], first, true)
+    compare(viewers.length, 1)
+    viewers = Artwork.withViewer(viewers, first, true)
+    compare(viewers.length, 1, "a widget counts once")
+    viewers = Artwork.withViewer(viewers, second, true)
+    viewers = Artwork.withViewer(viewers, first, false)
+    compare(viewers.length, 1)
+    verify(viewers[0] === second)
+    viewers = Artwork.withViewer(viewers, second, false)
+    compare(viewers.length, 0, "with album art off everywhere nothing is fetched")
+    compare(Artwork.withViewer(null, null, true).length, 0)
+  }
 }

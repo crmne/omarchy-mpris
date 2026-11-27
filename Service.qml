@@ -3,6 +3,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Services.Mpris
 import "Transport.js" as Transport
+import "Artwork.js" as ArtworkRules
 
 Item {
   id: root
@@ -23,6 +24,13 @@ Item {
   // What the bar's Image loads: never the player's URL itself, which Qt would
   // download without a size limit. See Artwork.qml.
   readonly property string artSource: artwork.source
+  // The bar widgets that show album art. The cover is fetched only while at
+  // least one does: a widget with Show album art off asks for nothing.
+  property var artViewers: []
+
+  function setArtViewer(viewer, showing) {
+    artViewers = ArtworkRules.withViewer(artViewers, viewer, showing)
+  }
 
   function playerKey(player) {
     if (!player) return ""
@@ -148,6 +156,7 @@ Item {
   Artwork {
     id: artwork
     url: root.artUrl
+    active: root.artViewers.length > 0
     // Plain http covers have always shown here, so they still do.
     allowHttp: true
   }

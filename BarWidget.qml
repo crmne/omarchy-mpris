@@ -82,6 +82,24 @@ BarWidget {
 
   onBarChanged: Qt.callLater(refreshAdaptiveWidthBudget)
 
+  // Tell the service whether this widget shows the cover, so it is fetched
+  // only while one does. A widget moving to another service leaves the old one.
+  property var artViewerService: null
+
+  function syncArtViewer() {
+    if (artViewerService && artViewerService !== mediaService && artViewerService.setArtViewer)
+      artViewerService.setArtViewer(root, false)
+    artViewerService = mediaService
+    if (mediaService && mediaService.setArtViewer) mediaService.setArtViewer(root, albumArtVisible)
+  }
+
+  onMediaServiceChanged: syncArtViewer()
+  onAlbumArtVisibleChanged: syncArtViewer()
+  Component.onCompleted: syncArtViewer()
+  Component.onDestruction: {
+    if (artViewerService && artViewerService.setArtViewer) artViewerService.setArtViewer(root, false)
+  }
+
   ServiceSource {
     id: serviceSource
     bar: root.bar

@@ -24,6 +24,7 @@ QtObject {
     readonly property bool canSeek: true
   }
 
+  function setArtViewer(viewer, showing) {}
   function previous() { return false }
   function next() { return false }
   function playPause() { return false }

@@ -52,6 +52,10 @@ This plugin uses Quickshell's MPRIS service directly and does not require
 
 ## Album art
 
+The cover is fetched only while a bar widget shows it. With **Show album art**
+off, or on a vertical bar, where the widget draws no artwork, the player's
+cover URL is never requested.
+
 The shell never downloads album art itself. Given an `http(s)` URL, Qt's
 `Image` holds the whole response in memory before decoding it, so a cover
 server answering with something huge could exhaust the memory of the shell
