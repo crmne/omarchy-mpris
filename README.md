@@ -74,9 +74,16 @@ never the player's path. Anything else, including GIF, WebP and larger
 pictures, shows no cover.
 
 The helper follows `http` and `https` only, re-checking every redirect and
-never reading a redirect's body, and ignores other URL schemes. The cover URL travels in the helper's environment, which only you
-can read, rather than on its command line, which every user on the machine can
-see.
+never reading a redirect's body, and ignores other URL schemes. The cover URL
+travels in the helper's environment, which only you can read, rather than on
+its command line, which every user on the machine can see.
+
+The player chooses where its cover lives, so the helper connects only to
+public internet addresses. A cover on this machine or on a local or private
+network (loopback, private and link-local ranges, carrier-grade NAT and the
+like) is refused before any connection is made, on every redirect hop, and the
+address checked is the one connected to. Proxy settings are not used for
+covers, since a proxy would make that connection instead.
 
 ## Remove
 

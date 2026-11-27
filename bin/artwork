@@ -24,15 +24,26 @@ the shell sees it: only PNG and JPEG are accepted, no larger than
 MAX_IMAGE_SIDE pixels a side, with every PNG chunk and JPEG segment that is
 not needed to draw the picture dropped. Anything else is refused, not passed
 through.
+
+The player picks the cover's address, and a player is not the user. So the
+helper only connects to public internet addresses: a host that resolves to
+loopback, a private or link-local network, carrier-grade NAT, or any other
+address that is not globally routable is refused before a connection is made,
+on every redirect hop. The address checked is the one connected to, so a name
+that resolves differently the second time cannot slip past. Proxy settings in
+the environment are not used, since a proxy would make that connection instead.
 """
 
 import argparse
 import errno
 import hashlib
+import http.client
+import ipaddress
 import json
 import os
 import re
 import signal
+import socket
 import stat
 import struct
 import sys
@@ -117,6 +128,81 @@ def check_remote(url, allow_http):
     return url
 
 
+# The well-known NAT64 prefix carries an IPv4 address in its last 32 bits.
+NAT64_PREFIX = ipaddress.ip_network("64:ff9b::/96")
+
+
+def public_address(text):
+    """True for an address on the public internet, the only kind a cover is
+    fetched from. Loopback, private, link-local, shared (carrier-grade NAT),
+    multicast, reserved and unspecified addresses are all refused, including
+    IPv4 ones dressed up as IPv6."""
+    try:
+        address = ipaddress.ip_address(str(text).split("%", 1)[0])
+    except ValueError:
+        return False
+    if address.version == 6:
+        nat64 = (ipaddress.IPv4Address(int(address) & 0xFFFFFFFF)
+                 if address in NAT64_PREFIX else None)
+        for embedded in (address.ipv4_mapped, address.sixtofour, nat64,
+                         address.teredo[1] if address.teredo else None):
+            if embedded is not None and not public_address(embedded):
+                return False
+    return address.is_global and not address.is_multicast
+
+
+def public_connection(address, timeout=socket._GLOBAL_DEFAULT_TIMEOUT,
+                      source_address=None, *args, **kwargs):
+    """socket.create_connection, refusing any host that is not public.
+
+    Every address the name resolves to has to be public, and the socket then
+    connects to one of those very addresses, so nothing resolved later is
+    trusted without being checked.
+    """
+    host, port = address[0], address[1]
+    resolved = socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM)
+    if not resolved or not all(public_address(info[4][0]) for info in resolved):
+        raise Blocked("refusing artwork from a local or private network address")
+    error = None
+    for family, kind, protocol, _, target in resolved:
+        sock = None
+        try:
+            sock = socket.socket(family, kind, protocol)
+            if timeout is not socket._GLOBAL_DEFAULT_TIMEOUT:
+                sock.settimeout(timeout)
+            if source_address:
+                sock.bind(source_address)
+            sock.connect(target)
+            return sock
+        except OSError as exc:
+            error = exc
+            if sock is not None:
+                sock.close()
+    raise error
+
+
+class PublicHTTPConnection(http.client.HTTPConnection):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._create_connection = public_connection
+
+
+class PublicHTTPSConnection(http.client.HTTPSConnection):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._create_connection = public_connection
+
+
+class PublicHTTPHandler(urllib.request.HTTPHandler):
+    def http_open(self, req):
+        return self.do_open(PublicHTTPConnection, req)
+
+
+class PublicHTTPSHandler(urllib.request.HTTPSHandler):
+    def https_open(self, req):
+        return self.do_open(PublicHTTPSConnection, req, context=self._context)
+
+
 class GuardedRedirects(urllib.request.HTTPRedirectHandler):
     """Re-checks every hop: an allowed URL may still redirect anywhere."""
 
@@ -134,7 +220,11 @@ class GuardedRedirects(urllib.request.HTTPRedirectHandler):
 def opener(allow_http):
     redirects = GuardedRedirects()
     redirects.allow_http = allow_http
-    return urllib.request.build_opener(redirects)
+    # No proxies: the connection, and so the address check, has to be to the
+    # cover's own host.
+    return urllib.request.build_opener(
+        urllib.request.ProxyHandler({}), PublicHTTPHandler(), PublicHTTPSHandler(),
+        redirects)
 
 
 def cache_dir():

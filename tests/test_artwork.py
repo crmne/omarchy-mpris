@@ -35,6 +35,8 @@ HELPER = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))
 spec = importlib.util.spec_from_loader("artwork", importlib.machinery.SourceFileLoader("artwork", HELPER))
 helper = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(helper)
+# The real check, before the tests let their loopback server past it.
+PUBLIC_ADDRESS = helper.public_address
 
 LIMIT = 4096
 
@@ -141,6 +143,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.redirect("file:///etc/passwd")
         elif route == "/to-ftp":
             self.redirect("ftp://127.0.0.1/cover.png")
+        elif route == "/to-private":
+            self.redirect("http://10.0.0.1/cover.png")
         elif route == "/to-cover":
             self.redirect("/cover.png")
         elif route == "/missing":
@@ -179,8 +183,13 @@ class ArtworkCase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.cache = os.path.join(self.tmp.name, "cache", "artwork")
+        # The covers come from a throwaway server on loopback, which the
+        # helper refuses like any other local address; only it is let through.
+        public = helper.public_address
         patches = [mock.patch.object(helper, "CACHE_DIR", self.cache),
-                   mock.patch.object(helper, "MAX_ARTWORK_BYTES", LIMIT)]
+                   mock.patch.object(helper, "MAX_ARTWORK_BYTES", LIMIT),
+                   mock.patch.object(helper, "public_address",
+                                     lambda text: text == "127.0.0.1" or public(text))]
         for patch in patches:
             patch.start()
             self.addCleanup(patch.stop)
@@ -410,6 +419,67 @@ class RemoteArtwork(ArtworkCase):
         self.assertEqual(self.entries(), sorted(["1" * 64, "4" * 64]))
 
 
+class PrivateNetworks(ArtworkCase):
+    """The player picks the cover's address, so a cover is fetched only from
+    the public internet, never from this machine or its networks."""
+
+    PUBLIC = ("1.1.1.1", "8.8.8.8", "2606:4700::1111", "::ffff:1.1.1.1", "64:ff9b::808:808")
+    LOCAL = ("127.0.0.1", "127.8.8.8", "0.0.0.0", "10.1.2.3", "172.16.0.1", "192.168.1.1",
+             "169.254.169.254", "100.64.0.1", "224.0.0.1", "255.255.255.255",
+             "::", "::1", "fe80::1", "fe80::1%eth0", "fc00::1", "ff02::1",
+             "::ffff:127.0.0.1", "::ffff:192.168.0.1", "2002:c0a8:0101::1",
+             "64:ff9b::a00:1", "not an address")
+
+    def test_only_public_addresses_pass(self):
+        public = PUBLIC_ADDRESS
+        for address in self.PUBLIC:
+            self.assertTrue(public(address), address)
+        for address in self.LOCAL:
+            self.assertFalse(public(address), address)
+
+    def test_a_cover_on_this_machine_is_refused_without_connecting(self):
+        with mock.patch.object(helper, "public_address", PUBLIC_ADDRESS):
+            with self.assertRaises(helper.Blocked):
+                helper.resolve(self.url("/cover.png"), allow_http=True)
+            with self.assertRaises(helper.Blocked):
+                helper.resolve("https://localhost/cover.png", allow_http=False)
+        self.assertEqual(Handler.hits, [])
+        self.assertEqual(self.entries(), [])
+
+    def test_a_redirect_to_a_private_network_is_refused(self):
+        with self.assertRaises(helper.Blocked):
+            helper.resolve(self.url("/to-private"), allow_http=True)
+        self.assertEqual(Handler.hits, ["/to-private"])
+        self.assertEqual(self.entries(), [])
+
+    def test_a_name_with_any_private_address_is_refused_before_connecting(self):
+        # A name can resolve to a public address and a private one at once.
+        answers = [(helper.socket.AF_INET, helper.socket.SOCK_STREAM, 6, "", (address, 443))
+                   for address in ("93.184.216.34", "192.168.0.1")]
+        with mock.patch.object(helper.socket, "getaddrinfo", return_value=answers), \
+                mock.patch.object(helper.socket, "socket") as opened:
+            with self.assertRaises(helper.Blocked):
+                helper.public_connection(("covers.example", 443), 5)
+        opened.assert_not_called()
+
+    def test_the_address_checked_is_the_one_connected_to(self):
+        answers = [(helper.socket.AF_INET, helper.socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))]
+        with mock.patch.object(helper.socket, "getaddrinfo", return_value=answers), \
+                mock.patch.object(helper.socket, "socket") as opened:
+            helper.public_connection(("covers.example", 443), 5)
+        opened.return_value.connect.assert_called_once_with(("93.184.216.34", 443))
+
+    def test_proxy_settings_are_not_used(self):
+        # A proxy would make the connection instead, past the address check.
+        proxies = {"http_proxy": "http://192.168.0.1:3128", "https_proxy": "http://192.168.0.1:3128",
+                   "HTTP_PROXY": "http://192.168.0.1:3128", "HTTPS_PROXY": "http://192.168.0.1:3128"}
+        with mock.patch.dict(os.environ, proxies):
+            source = helper.resolve(self.url("/cover.png"), allow_http=True)
+        self.assertTrue(source.startswith("file://"))
+        self.assertEqual(Handler.hits, ["/cover.png"])
+
+
+
 class Main(ArtworkCase):
     def test_the_url_comes_from_the_environment_and_does_not_linger(self):
         code, payload, leaked = self.run_main(self.url("/cover.png"), request="7")
@@ -421,7 +491,7 @@ class Main(ArtworkCase):
 
     def test_failures_are_reported_as_json(self):
         cases = {"/endless": "too_large", "/missing": "http", "/to-ftp": "blocked",
-                 "/huge.png": "image"}
+                 "/huge.png": "image", "/to-private": "blocked"}
         for path, expected in cases.items():
             code, payload, _ = self.run_main(self.url(path))
             self.assertEqual((code, payload["ok"], payload["code"]), (1, False, expected), path)
